@@ -241,8 +241,8 @@ function vCompute(){
   V.totCur = sum(r => r.prop ? r.curCost : NaN);
   V.totOpt = sum(r => r.prop ? r.propCost : NaN);
   V.changes = V.rows.filter(r => r.prop && r.prop.id !== r.dId).sort((x, y) => (y.curCost - y.propCost) - (x.curCost - x.propCost));
-  // Gain total négligeable (moins d'une minute ou d'un km) : on garde la répartition actuelle
-  if (V.changes.length && V.totCur - V.totOpt < (V.metric === "time" ? 60 : 1000)){
+  // Gain total négligeable (moins de 5 minutes ou 5 km au total) : on garde la répartition actuelle
+  if (V.changes.length && V.totCur - V.totOpt < (V.metric === "time" ? 300 : 5000)){
     const byId = new Map(V.docs.map(d => [d.id, d]));
     V.rows.forEach(r => { if (r.prop){ r.prop = byId.get(r.dId) || r.prop; r.propCost = r.curCost; } });
     V.totOpt = V.totCur; V.changes = [];
@@ -284,7 +284,7 @@ function vRender(){
   $("#vFile").textContent = V.file;
   const gain = V.totCur - V.totOpt, unit = V.metric === "time" ? hours : m => nf0.format(Math.round(m / 1000)) + " km";
   $("#vStats").innerHTML = `<div class="vtile ok"><b>${c.ok}</b><span>trajets conformes</span></div><div class="vtile bad"><b>${c.bad}</b><span>écarts</span></div><div class="vtile nv"><b>${c.nv}</b><span>non vérifiables</span></div>`
-    + (V.changes.length ? `<div class="vtile gain"><b>−${unit(gain)}</b><span>${V.metric === "time" ? "de trajet" : "parcourus"} avec ${plural(V.changes.length, "réaffectation")}</span></div>` : `<div class="vtile gain"><b>✓</b><span>répartition déjà optimale</span></div>`);
+    + (V.changes.length ? `<div class="vtile gain"><b>−${V.metric === "time" ? dur(gain) : km(gain)}</b><span>${V.metric === "time" ? "de trajet" : "parcourus"} avec ${plural(V.changes.length, "réaffectation")}</span></div>` : `<div class="vtile gain"><b>✓</b><span>répartition déjà optimale</span></div>`);
   $("#explore").classList.toggle("vtable", V.view === "table");
   $("#vView").textContent = V.view === "table" ? "Voir la carte" : "Voir le tableau";
   $$("#vTabs button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.t === V.tab)));
@@ -318,6 +318,7 @@ function vRender(){
 const V_RES = {ok:"Conforme", bad:"Écart", nv:"Non vérifiable"};
 const vLine = r => r.src != null && V.src ? V.src.rowNum[r.src] + 1 : r.i + 1;
 const vPlace = p => p ? p.label.replace(/ \(CEDEX.*\)$/, "").replace(/ Arrondissement$/, "") : "introuvable";
+const vCity = p => p ? vPlace(p).replace(/^[\dA-Z]{4,6}\s+/, "").replace(/ · .*$/, "") : "";
 const vSign = (x, dec) => x == null || isNaN(x) ? "" : (x > 0 ? "+" : x < 0 ? "−" : "") + (dec ? nf1.format(Math.abs(x)) : Math.round(Math.abs(x)));
 const vCls = (x, lim) => x == null || isNaN(x) ? "" : Math.abs(x) <= lim ? "inr" : x > 0 ? "up" : "dn";
 const V_SORT = {line:r => vLine(r), status:r => r.status || "", etab:r => (r.etabName || r.etabQ).toLowerCase(), doc:r => (r.docName || r.docQ).toLowerCase(),
@@ -337,8 +338,8 @@ function vTr(r, ncol){
   const sel = V.open === r.i;
   return `<tr class="vr${sel ? " sel" : ""}" data-vi="${r.i}">
     <td class="n num">${vLine(r)}</td>${V.statusCol ? `<td><small style="color:var(--ink)">${esc(r.status || "")}</small></td>` : ""}
-    <td><b>${esc(r.etabName || r.etabQ)}</b><small>${esc(vPlace(r.ePt))}${r.ePt && r.ePt.cedex ? " · code CEDEX" : ""}</small></td>
-    <td><b>${esc(r.docName || r.docQ)}</b><small>${esc(vPlace(r.dPt))}</small></td>
+    <td><b>${esc(r.etabName || vCity(r.ePt) || r.etabQ)}</b><small>${esc(r.etabName ? vPlace(r.ePt) : r.etabQ)}${r.ePt && r.ePt.cedex ? " · code CEDEX" : ""}</small></td>
+    <td><b>${esc(r.docName || vCity(r.dPt) || r.docQ)}</b><small>${esc(r.docName ? vPlace(r.dPt) : r.docQ)}</small></td>
     <td class="num sep">${r.km != null ? nf1.format(r.km) : "—"}</td>
     <td class="num strong">${r.newKm != null ? nf1.format(r.newKm) : "—"}</td>
     <td class="num ${vCls(r.dKm, V.tolKm)}">${vSign(r.dKm, 1)}</td>
@@ -380,8 +381,8 @@ function vRenderPropTable(){
 }
 function vSetView(v, keep){
   V.view = v; $("#explore").classList.toggle("vtable", v === "table");
-  if (map) setTimeout(() => map.invalidateSize(), 60);
-  vRender(); drawMap(!keep);
+  vRender();
+  if (map){ map.invalidateSize(); setTimeout(() => { map.invalidateSize(); drawMap(!keep); }, 80); }
 }
 function vBadge(res){ return `<span class="vdot" style="background:${VCOL[res]}"></span>`; }
 function vRowHTML(r){

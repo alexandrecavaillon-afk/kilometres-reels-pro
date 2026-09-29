@@ -14,7 +14,9 @@ function dur(s){
 /* Temps de trajet réalistes. Le calcul routier (OSRM, itinéraire le plus rapide en voiture) donne un temps sans trafic.
    On l'ajuste selon la vitesse moyenne du trajet : un trajet lent en ville est plus allongé qu'un trajet sur voie rapide.
    Trois valeurs : heures creuses (basse), moyen, heure de pointe (haute). Aucune distance à vol d'oiseau. */
-const TRAFIC = [[20, 1.15, 1.45, 1.95], [35, 1.10, 1.35, 1.70], [60, 1.05, 1.20, 1.45], [90, 1.00, 1.12, 1.30]];
+// Coefficients recalés le 29/09/2026 sur 325 trajets EHPAD ↔ médecin vérifiés (temps déclarés comparés au temps routier sans trafic) :
+// par tranche de vitesse moyenne, heures creuses ≈ 20e centile, moyen ≈ médiane, heure de pointe ≈ 80e centile avec une marge.
+const TRAFIC = [[20, 0.95, 1.20, 1.60], [35, 0.95, 1.15, 1.50], [60, 0.88, 0.97, 1.15], [90, 0.90, 0.96, 1.08]];
 function traficFacteurs(v){
   if (!(v > 0)) return [1.05, 1.25, 1.55];
   if (v <= TRAFIC[0][0]) return TRAFIC[0].slice(1);
