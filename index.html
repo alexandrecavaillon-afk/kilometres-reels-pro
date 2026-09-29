@@ -1079,15 +1079,18 @@ svg.i{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 /* ---- v5 : vérification en tableau, carte en option ---- */
 .explore.verif.vtable .panel{left:16px;right:16px;width:auto;background:var(--surface)}
 .explore.verif.vtable #map{visibility:hidden}
+.explore.verif.vtable .panel{display:block;overflow:auto;overscroll-behavior:contain}
+.explore.verif.vtable .pbody{overflow:visible}
+.explore.verif.vtable .pfoot{position:sticky;bottom:0;background:var(--surface);z-index:3}
 .explore.verif.vtable .vstats{grid-template-columns:repeat(4,minmax(0,220px))}
 .vtools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;list-style:none;padding:8px 2px}
 .vtools input[type=search]{flex:1;min-width:220px;max-width:420px;padding:7px 12px;border-radius:10px;border:1px solid var(--line);background:var(--surface2);color:var(--ink);font:inherit;font-size:13px}
 .vtw{list-style:none}
 table.vt{border-collapse:separate;border-spacing:0;width:100%;font-size:13px;font-variant-numeric:tabular-nums;line-height:1.3}
-.vt th{position:sticky;top:-4px;z-index:2;background:var(--surface2);text-align:left;font-weight:600;font-size:11.5px;color:var(--muted);padding:7px 8px;border-bottom:1px solid var(--line);white-space:nowrap;cursor:pointer;user-select:none}
+.vt th{position:sticky;top:0;z-index:2;background:var(--surface2);text-align:left;font-weight:600;font-size:11.5px;color:var(--muted);padding:7px 8px;border-bottom:1px solid var(--line);white-space:nowrap;cursor:pointer;user-select:none}
 .vt th.num{text-align:right}.vt th[aria-sort] {color:var(--ink)}
 .vt th.grp{cursor:default;text-align:center;border-bottom:0;padding-bottom:0;color:var(--ink)}
-.vt thead tr+tr th{top:22px}
+.vt thead tr+tr th{top:26px}
 .vt td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
 .vt td small{display:block;color:var(--muted);font-size:11.5px}
 .vt .num{text-align:right;white-space:nowrap}.vt .strong{font-weight:650}.vt .n{color:var(--faint);width:1%}
