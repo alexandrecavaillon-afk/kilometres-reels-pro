@@ -132,6 +132,10 @@ async function nominatim(q){
   const r = await nominatimRaw("limit=1&q=" + encodeURIComponent(q.slice(0, 200)));
   return r[0] ? {lat:+r[0].lat, lon:+r[0].lon, label:shortLabel(r[0]), cc:(r[0].address || {}).country_code, score:null} : null;
 }
+/* Codes CEDEX : grande ville de chaque département où ils sont nombreux (candidat supplémentaire, ex. 13312 Marseille Cedex). */
+const GRANDE_VILLE = {"06":"06000", "13":"13001", "14":"14000", "21":"21000", "25":"25000", "29":"29200", "31":"31000", "33":"33000", "34":"34000", "35":"35000", "37":"37000",
+  "38":"38000", "42":"42000", "44":"44000", "45":"45000", "49":"49000", "51":"51100", "54":"54000", "57":"57000", "59":"59000", "63":"63000", "67":"67000", "69":"69001",
+  "75":"75001", "76":"76000", "80":"80000", "83":"83000", "84":"84000", "86":"86000", "87":"87000", "92":"92000", "93":"93000", "94":"94000"};
 /* Code postal seul : une seule proposition par pays, la plus grande ville de ce code. */
 const PC_CACHE = new Map();
 function postalCandidates(raw){
@@ -160,9 +164,18 @@ function postalCandidates(raw){
       };
       try {
         let f = await biggest(code), approx = "";
-        // Code CEDEX : on se rattache à la commune du code « de base » (57403 → 57400, puis 57000)
-        if (!f && !code.endsWith("0")){ for (const base of [code.slice(0, 4) + "0", code.slice(0, 3) + "00"]){ f = await biggest(base); if (f){ approx = base; break; } } }
-        if (f) out.push({lat:f.geometry.coordinates[1], lon:f.geometry.coordinates[0], label:withCountry(code + " " + (f.properties.city || f.properties.label) + (approx ? " (CEDEX, pris comme " + approx + ")" : ""), "fr"), cc:"fr", commune:true, cedex:!!approx, score:1});
+        const mk = (f, approx) => ({lat:f.geometry.coordinates[1], lon:f.geometry.coordinates[0], label:withCountry(code + " " + (f.properties.city || f.properties.label) + (approx ? " (CEDEX, pris comme " + approx + ")" : ""), "fr"), cc:"fr", commune:true, cedex:!!approx, score:1});
+        if (f) out.push(mk(f, ""));
+        else if (!code.endsWith("0")){
+          // Code CEDEX : plusieurs communes possibles. La première est celle du code « de base » (57403 → 57400, puis 57000) ;
+          // les autres (code en 00, grande ville du département) servent à choisir la bonne d'après la distance déclarée.
+          const alts = [], seen = new Set();
+          for (const base of [code.slice(0, 4) + "0", code.slice(0, 3) + "00", GRANDE_VILLE[code.slice(0, 2)]]){
+            if (!base || base === code || seen.has(base)) continue; seen.add(base);
+            try { const g = await biggest(base); if (g && !alts.some(x => x.city === (g.properties.city || g.properties.label))) alts.push({...mk(g, base), city:g.properties.city || g.properties.label}); } catch (e){ /* candidat suivant */ }
+          }
+          if (alts.length){ const c = alts[0]; c.alts = alts; out.push(c); }
+        }
       } catch (e){ ignErr = e; }
     }
     if (!onlyFR() || !out.length){

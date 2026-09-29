@@ -119,7 +119,18 @@ async function runVerif(rowsIn, saved){
       try { place.set(retry[k], await geocode(retry[k])); } catch (e){ place.set(retry[k], null); }
     }
     if (S.abort){ setStatus("Calcul arrêté."); return; }
-    V.rows.forEach(r => { r.ePt = place.get(r.etabQ) || null; r.dPt = place.get(r.docQ) || null; });
+    V.rows.forEach(r => { r.eKey = null; r.ePt = place.get(r.etabQ) || null; r.dPt = place.get(r.docQ) || null; });
+    // Codes CEDEX : parmi les communes possibles, on garde celle qui colle le mieux à la distance déclarée
+    V.rows.forEach(r => {
+      const p = r.ePt;
+      if (!p || !p.alts || p.alts.length < 2 || !r.dPt || r.km == null) return;
+      const fit = a => Math.abs(crow(a, r.dPt) / 1000 * 1.25 - r.km);
+      const b = p.alts.reduce((x, y) => fit(y) < fit(x) ? y : x);
+      if (b === p) return;
+      const key = r.etabQ + " @" + b.city;
+      if (!place.has(key)) place.set(key, {...b, label:b.label.replace(/\)$/, ", choisi d'après la distance déclarée)"), cedexChoix:true});
+      r.eKey = key; r.ePt = place.get(key);
+    });
     // 2. Médecins
     const docs = new Map();
     V.rows.forEach(r => {
@@ -129,10 +140,10 @@ async function runVerif(rowsIn, saved){
     V.docs = [...docs.values()];
     // 3. Matrice des temps et distances (lieux uniques)
     V.dPlaces = [...new Set(V.docs.filter(d => d.pt).map(d => d.q))];
-    V.ePlaces = [...new Set(V.rows.filter(r => r.ePt).map(r => r.etabQ))];
+    V.ePlaces = [...new Set(V.rows.filter(r => r.ePt).map(r => r.eKey || r.etabQ))];
     const dIdx = new Map(V.dPlaces.map((q, k) => [q, k])), eIdx = new Map(V.ePlaces.map((q, k) => [q, k]));
     V.docs.forEach(d => { d.pi = d.pt ? dIdx.get(d.q) : -1; });
-    V.rows.forEach(r => { r.ei = r.ePt ? eIdx.get(r.etabQ) : -1; r.di = r.dPt ? dIdx.get(r.docQ) : -1; });
+    V.rows.forEach(r => { r.ei = r.ePt ? eIdx.get(r.eKey || r.etabQ) : -1; r.di = r.dPt ? dIdx.get(r.docQ) : -1; });
     const nD = V.dPlaces.length, nE = V.ePlaces.length;
     const T = Array.from({length:nD}, () => new Float64Array(nE).fill(NaN));
     const D = Array.from({length:nD}, () => new Float64Array(nE).fill(NaN));
@@ -185,7 +196,8 @@ function vCompute(){
     if (r.km == null && r.min == null){ r.res = "ok"; r.why = "Recalculé (pas de valeur déclarée)"; }
     else if (issues.length){ r.res = "bad"; r.why = "Écart : " + issues.join(", "); }
     else { r.res = "ok"; r.why = "Conforme"; }
-    if (r.ePt.cedex || r.dPt.cedex) r.why += " · code CEDEX rattaché à sa commune, position approchée";
+    if (r.ePt.cedexChoix) r.why += " · code CEDEX : commune choisie d'après la distance déclarée, à confirmer";
+    else if (r.ePt.cedex || r.dPt.cedex) r.why += " · code CEDEX rattaché à sa commune, position approchée";
   }
   // Médecin le plus proche (sans contrainte)
   const docsOk = V.docs.filter(d => d.pi >= 0);
