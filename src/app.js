@@ -699,11 +699,12 @@ function xlsx(sheetName, rows, widths){
   ]);
 }
 function exportXlsx(){
-  if (S.mode === "verif"){ exportVerif(); return; }
+  if (S.mode === "verif"){ if (gsOn()) gsVerif(); else exportVerif(); return; }
   if (S.mode === "route"){
     const {a, b, r} = S.route;
     const rows = [["Départ", "Arrivée", "Distance route (km)", "Durée (min)", "Durée", "Latitude départ", "Longitude départ", "Latitude arrivée", "Longitude arrivée"],
       [a.label, b.label, Math.round(r.distance / 100) / 10, Math.round(r.duration / 60), dur(r.duration), a.lat, a.lon, b.lat, b.lon]];
+    if (gsOn()){ gsTable("Trajet", rows, [34, 34, 14, 12, 10, 12, 12, 12, 12], "trajet.xlsx"); return; }
     const url = URL.createObjectURL(xlsx("Trajet", rows, [34, 34, 14, 12, 10, 12, 12, 12, 12]));
     const el = document.createElement("a"); el.href = url; el.download = "trajet.xlsx"; document.body.appendChild(el); el.click(); el.remove();
     setTimeout(() => URL.revokeObjectURL(url), 3000);
@@ -726,6 +727,7 @@ function exportXlsx(){
     });
     name = `${S.cat}-par-depart.xlsx`;
   }
+  if (gsOn()){ gsTable(c.label, rows, S.mode === "one" ? [30, ...wid] : [26, 36, ...wid], name); return; }
   const url = URL.createObjectURL(xlsx(c.label, rows, S.mode === "one" ? [30, ...wid] : [26, 36, ...wid]));
   const a = document.createElement("a"); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 3000);

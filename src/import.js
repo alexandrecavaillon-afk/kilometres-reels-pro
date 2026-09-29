@@ -90,11 +90,12 @@ function csvRows(text){
 /* Nettoie une feuille : cellules en texte, lignes et colonnes vides retirées. */
 function cleanSheet(s){
   let rows = [];
-  for (const r of s.rows){ if (!r) continue; const a = Array.from(r, v => String(v ?? "").replace(/\s+/g, " ").trim()); if (a.some(Boolean)) rows.push(a); }
+  const rowNum = [];
+  for (let i = 0; i < s.rows.length; i++){ const r = s.rows[i]; if (!r) continue; const a = Array.from(r, v => String(v ?? "").replace(/\s+/g, " ").trim()); if (a.some(Boolean)){ rows.push(a); rowNum.push(i); } }
   const w = rows.reduce((m, r) => Math.max(m, r.length), 0);
   const cols = [...Array(w).keys()].filter(k => rows.some(r => r[k]));
   rows = rows.map(r => cols.map(k => r[k] || ""));
-  return {name:s.name, hidden:s.hidden, rows, letters:cols.map(colLetter)};
+  return {name:s.name, hidden:s.hidden, rows, letters:cols.map(colLetter), raw:s.rows, rowNum, cols};
 }
 
 const NAME_RE = /(^nom|name|[ée]tablissement|raison sociale|enseigne|soci[ée]t[ée]|structure|client|libell|d[ée]nomination|^site$|^lieu$)/i;

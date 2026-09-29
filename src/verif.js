@@ -70,8 +70,8 @@ function vExtract(){
   const val = (r, id) => m[id] >= 0 ? (r[m[id]] || "").trim() : "";
   const pad = v => scopeHasFR() && /^\d{4}$/.test(v) ? "0" + v : v;
   const num = v => { if (!v) return null; const n = parseFloat(String(v).replace(/\s/g, "").replace(",", ".").replace(/[^\d.\-]/g, "")); return isFinite(n) ? n : null; };
-  return data.map(r => ({etabQ:pad(val(r, "etabLoc")), etabName:val(r, "etabName"), docQ:pad(val(r, "docLoc")), docName:val(r, "docName"),
-    km:num(val(r, "km")), min:num(val(r, "min")), status:val(r, "status")})).filter(x => x.etabQ && x.docQ);
+  return data.map((r, j) => ({etabQ:pad(val(r, "etabLoc")), etabName:val(r, "etabName"), docQ:pad(val(r, "docLoc")), docName:val(r, "docName"),
+    km:num(val(r, "km")), min:num(val(r, "min")), status:val(r, "status"), src:VM.hr + 1 + j})).filter(x => x.etabQ && x.docQ);
 }
 function vUpdateMapper(){
   const ok = VM.map.etabLoc >= 0 && VM.map.docLoc >= 0;
@@ -94,6 +94,7 @@ async function runVerif(rowsIn, saved){
   S.abort = false; S.mode = "verif"; S.open = null;
   V.file = saved ? saved.fichier : VM.title; V.ready = false; V.selDoc = null; V.open = null; V.tab = "trajets"; V.filter = "bad";
   V.statusCol = VM.map.status >= 0;
+  { const sh = VM && VM.sheets[VM.si]; V.src = !Array.isArray(rowsIn) && sh && sh.raw ? {raw:sh.raw, rowNum:sh.rowNum, cols:sh.cols, hr:VM.hr, map:{...VM.map}, name:sh.name} : null; }
   V.rows = rows.map((r, i) => ({...r, i, eLabel:r.etabName || "Établissement " + r.etabQ, dId:(r.docName ? r.docName + "|" : "") + r.docQ, dLabel:r.docName || "Médecin " + r.docQ}));
   showExplore(); layerRoute.clearLayers(); layerPts.clearLayers();
   $("#list").innerHTML = ""; $("#footInfo").textContent = "";
