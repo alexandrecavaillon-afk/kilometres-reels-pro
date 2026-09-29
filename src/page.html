@@ -1,0 +1,677 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: https://tile.openstreetmap.org; connect-src 'self' https://*.supabase.co https://api.anthropic.com https://api.openai.com https://generativelanguage.googleapis.com https://data.geopf.fr https://nominatim.openstreetmap.org https://photon.komoot.io https://router.project-osrm.org https://routing.openstreetmap.de; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#f5f5f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<title>Kilomètres réels Pro</title>
+<meta name="description" content="Trouvez l'établissement de santé ou gériatrique le plus proche, par la route.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230071e3'/%3E%3Cpath d='M16 7c-3.9 0-7 3-7 6.8 0 5 7 11.2 7 11.2s7-6.2 7-11.2C23 10 19.9 7 16 7z' fill='%23fff'/%3E%3Ccircle cx='16' cy='13.8' r='2.6' fill='%230071e3'/%3E%3C/svg%3E">
+<style>
+{{LEAFLET_CSS}}
+:root{
+  --bg:#f5f5f7; --surface:#ffffff; --surface2:#f5f5f7; --glass:rgba(255,255,255,.78); --ink:#1d1d1f; --muted:#6e6e73; --faint:#86868b;
+  --line:rgba(0,0,0,.09); --accent:#0071e3; --accent-ink:#ffffff; --accent-soft:rgba(0,113,227,.1); --warn:#b25000; --route:#0071e3;
+  --shadow:0 1px 2px rgba(0,0,0,.04),0 8px 28px rgba(0,0,0,.08); --shadow-lg:0 2px 6px rgba(0,0,0,.05),0 24px 60px rgba(0,0,0,.16);
+  --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Helvetica Neue","Segoe UI",Roboto,Inter,Arial,sans-serif;
+  --r:18px; color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root{ --bg:#000000; --surface:#1c1c1e; --surface2:#2c2c2e; --glass:rgba(28,28,30,.8); --ink:#f5f5f7; --muted:#a1a1a6; --faint:#8e8e93;
+    --line:rgba(255,255,255,.12); --accent:#2997ff; --accent-ink:#000; --accent-soft:rgba(41,151,255,.16); --warn:#ff9f0a; --route:#2997ff;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 28px rgba(0,0,0,.5); --shadow-lg:0 24px 60px rgba(0,0,0,.6); color-scheme:dark; }
+  .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.92) contrast(.88) saturate(.5)}
+}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%}
+body{background:var(--bg);color:var(--ink);font:400 17px/1.47 var(--sans);letter-spacing:-.022em;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+button,input,select{font:inherit;letter-spacing:inherit;color:inherit}
+button{cursor:pointer}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px;border-radius:8px}
+.hidden{display:none!important}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+svg.i{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+
+/* Barre du haut */
+.bar{position:fixed;inset:0 0 auto 0;height:52px;z-index:900;display:flex;align-items:center;justify-content:space-between;padding:0 max(20px,env(safe-area-inset-left));
+  background:var(--glass);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);border-bottom:1px solid var(--line)}
+.brand{all:unset;cursor:pointer;display:flex;align-items:center;gap:9px;font-weight:600;font-size:17px;letter-spacing:-.02em}
+.probadge{font-size:11px;font-weight:700;color:var(--accent);background:var(--accent-soft);border-radius:6px;padding:2px 6px;letter-spacing:.02em}
+.brand .logo{width:26px;height:26px;border-radius:7px;background:var(--accent);display:grid;place-items:center}
+.brand .logo svg{width:16px;height:16px;fill:#fff;stroke:none}
+.ghost{border:0;background:transparent;color:var(--accent);padding:8px 10px;border-radius:10px;font-size:15px;display:inline-flex;align-items:center;gap:6px}
+.ghost:hover{background:var(--accent-soft)}
+
+/* Accueil */
+.home{min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:clamp(110px,18vh,190px) 20px 40px;text-align:center}
+.home h1{font-size:clamp(38px,5.6vw,68px);line-height:1.05;letter-spacing:-.045em;font-weight:700;margin:0 0 16px;max-width:26ch}
+.home .sub{font-size:clamp(19px,2.2vw,24px);line-height:1.35;color:var(--muted);margin:0 0 40px;max-width:34ch;letter-spacing:-.02em}
+.search{position:relative;width:min(640px,100%);text-align:left}
+.search .field{display:flex;align-items:center;gap:12px;height:62px;padding:0 10px 0 22px;background:var(--surface);border-radius:31px;box-shadow:var(--shadow);border:1px solid var(--line);transition:box-shadow .2s}
+.search .field:focus-within{box-shadow:0 0 0 4px var(--accent-soft),var(--shadow)}
+.search .field svg{color:var(--faint)}
+.search input{flex:1;min-width:0;border:0;outline:0;background:transparent;font-size:19px;height:100%}
+.search input::placeholder{color:var(--faint)}
+.search .go{border:0;background:var(--accent);color:#fff;width:44px;height:44px;border-radius:50%;display:grid;place-items:center;flex:none}
+.search .go svg{stroke:#fff}
+.sugg{position:absolute;left:0;right:0;top:calc(100% + 8px);z-index:950;list-style:none;margin:0;padding:6px;background:var(--surface);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow-lg);max-height:340px;overflow:auto}
+.sugg li{display:flex;gap:12px;align-items:center;padding:11px 14px;border-radius:12px;cursor:pointer;font-size:16px}
+.sugg li[aria-selected=true],.sugg li:hover{background:var(--surface2)}
+.sugg li small{display:block;color:var(--muted);font-size:13px}
+.sugg li svg{color:var(--faint)}
+.actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:22px}
+.pill{border:1px solid var(--line);background:var(--surface);border-radius:980px;padding:10px 18px;font-size:15px;display:inline-flex;gap:8px;align-items:center;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+.pill:hover{border-color:var(--accent);color:var(--accent)}
+.pill svg{width:18px;height:18px}
+.msg{margin:18px auto 0;max-width:560px;font-size:15px;color:var(--warn)}
+.steps3{display:flex;gap:clamp(18px,4vw,48px);justify-content:center;flex-wrap:wrap;margin:72px 0 0;padding:0;list-style:none;color:var(--muted);font-size:15px}
+.steps3 li{display:flex;gap:10px;align-items:center}
+.steps3 b{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:var(--surface);border:1px solid var(--line);color:var(--ink);font-size:13px}
+.foot{margin-top:auto;padding-top:64px;font-size:12px;color:var(--faint);max-width:720px;line-height:1.5}
+.foot p{margin:0 0 6px}
+
+/* Trajet A → B */
+.modes{margin:0 0 22px;font-size:15px;padding:3px;border-radius:12px}
+.modes button{padding:8px 18px;border-radius:9px}
+#homeRoute{width:min(640px,100%)}
+.rform{position:relative;background:var(--surface);border:1px solid var(--line);border-radius:22px;box-shadow:var(--shadow);padding:8px 58px 8px 14px;text-align:left}
+.rrow{display:flex;align-items:center;gap:12px}
+.rrow+.rrow{border-top:1px solid var(--line)}
+.rrow .search{flex:1;width:auto}
+.rform .search .field{height:54px;border:0;box-shadow:none;background:transparent;border-radius:0;padding:0}
+.rform .search .field:focus-within{box-shadow:none}
+.rform .search input{font-size:18px}
+.dot{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;color:#fff;font-size:12px;font-weight:700;flex:none}
+.dot.a{background:var(--accent)}.dot.b{background:#ff3b30}
+.swap{position:absolute;right:12px;top:50%;transform:translateY(-50%);width:36px;height:36px;border-radius:50%;border:0;background:var(--surface2);color:var(--accent);display:grid;place-items:center}
+.swap svg{width:18px;height:18px}
+.btn.big{margin-top:16px;padding:14px 30px;font-size:17px}
+.rform.small{box-shadow:none;border-radius:16px;padding:2px 50px 2px 10px}
+.phead .rform.small .search .field{height:44px;padding:0;border-radius:0;background:transparent}
+.rform.small .search input{font-size:15px}
+.rform.small .dot{width:22px;height:22px;font-size:11px}
+.rform.small .swap{width:32px;height:32px;right:9px}
+.rcard{list-style:none;padding:12px 10px 4px}
+.rbig{display:flex;gap:28px;flex-wrap:wrap;margin:4px 0 16px}
+.rbig b{display:block;font-size:34px;line-height:1.05;font-weight:700;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.rbig span{font-size:13px;color:var(--muted)}
+.ends{list-style:none;margin:0 0 6px;padding:0}
+.ends li{display:flex;gap:10px;align-items:flex-start;padding:8px 0;font-size:15px;border-top:1px solid var(--line)}
+.ends li>span:last-child{min-width:0;overflow-wrap:anywhere}
+.ends .dot{width:22px;height:22px;font-size:11px}
+.alt{display:block;margin-top:6px;width:100%;border:1px solid var(--line);background:var(--surface2);border-radius:9px;padding:6px 9px;font-size:14px}
+.rcard .btns{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 8px}
+.rcard details summary{cursor:pointer;color:var(--accent);font-size:14px;margin:8px 0;list-style:none}
+.rcard details summary::-webkit-details-marker{display:none}
+
+/* Choix des pays */
+.scope{border:0;background:transparent;color:var(--muted);font-size:15px;display:inline-flex;align-items:center;gap:7px;margin:-8px 0 18px;padding:6px 12px;border-radius:980px}
+.scope:hover{background:var(--accent-soft)}
+.scope b{color:var(--accent);font-weight:500}
+.scope svg{width:18px;height:18px}
+.scope .chev,.chip .chev{width:14px;height:14px;color:var(--faint)}
+.chip.scope-btn svg:first-child{width:16px;height:16px;color:var(--accent)}
+.toggle.bigt{font-size:16px;color:var(--ink);padding:14px 16px;background:var(--surface);border-radius:14px;box-shadow:0 0 0 1px var(--line);width:100%;justify-content:space-between;flex-direction:row-reverse}
+.cfilter{display:flex;align-items:center;gap:10px;margin:14px 0 6px;background:var(--surface);border-radius:12px;padding:0 12px;box-shadow:0 0 0 1px var(--line)}
+.cfilter svg{color:var(--faint);width:18px;height:18px}
+.cfilter input{flex:1;border:0;outline:0;background:transparent;height:42px;font-size:16px}
+.clist{max-height:46vh;overflow:auto;background:var(--surface);border-radius:14px;box-shadow:0 0 0 1px var(--line);padding:4px 0;margin-top:8px}
+.clist.dim{opacity:.4;pointer-events:none}
+.clist h3{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:12px 16px 4px}
+.crow{display:flex;gap:12px;align-items:center;padding:10px 16px;font-size:16px;cursor:pointer;border-top:1px solid var(--line)}
+.clist h3+.crow{border-top:0}
+.crow:hover{background:var(--surface2)}
+.crow input{width:20px;height:20px;accent-color:var(--accent);margin:0;flex:none}
+.cfoot{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:16px}
+
+/* Vérification */
+#homeVerif{width:min(640px,100%)}
+.vcard{background:var(--surface);border:1px solid var(--line);border-radius:22px;box-shadow:var(--shadow);padding:24px 26px;text-align:left}
+.vcard h3{margin:0 0 8px;font-size:21px;letter-spacing:-.02em}
+.vcard p{margin:0 0 10px;color:var(--muted);font-size:16px}
+.vcard ul{margin:0 0 6px;padding-left:20px;color:var(--ink);font-size:16px}
+.vcard li{margin:4px 0}
+.explore.verif .panel{width:460px}
+.vtop{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.vtop b{font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.vstats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:10px 0}
+.vtile{background:var(--surface);border-radius:12px;padding:8px 9px;box-shadow:0 0 0 1px var(--line)}
+.vtile b{display:block;font-size:20px;line-height:1.1;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.vtile span{display:block;font-size:11px;color:var(--muted);line-height:1.25;margin-top:2px}
+.vtile.ok b{color:#248a3d}.vtile.bad b{color:var(--warn)}.vtile.nv b{color:var(--faint)}.vtile.gain b{color:var(--accent)}
+@media (prefers-color-scheme:dark){.vtile.ok b{color:#30d158}}
+.vtabs{display:grid;grid-template-columns:repeat(4,1fr);width:100%}
+.vacts{margin:8px 0 0;gap:6px}.vacts .btn{padding:6px 11px;font-size:13px}
+.vset{margin-top:10px;font-size:14px}
+.vset summary{cursor:pointer;color:var(--accent);list-style:none}
+.vset summary::-webkit-details-marker{display:none}
+.vgrid{display:grid;gap:8px;margin-top:8px}
+.vgrid label{display:flex;justify-content:space-between;align-items:center;gap:8px;color:var(--muted);font-size:13px}
+.vgrid select,.vgrid input{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:5px 7px;font-size:13px}
+.vgrid input{width:56px}
+.vdot{width:11px;height:11px;border-radius:50%;display:inline-block;flex:none;margin:0 8px 0 7px}
+.item>button:has(>.vdot){grid-template-columns:26px 1fr auto}
+.vfilter{list-style:none;padding:8px 2px 6px}
+.vfilter .seg{display:flex;flex-wrap:wrap;font-size:12px}
+.vfilter .seg button{padding:5px 8px}
+.vsum{list-style:none;padding:10px;font-size:14px}
+.vsum p{margin:0 0 8px}
+.vsum .warn{color:var(--warn)}
+.who small .to{color:var(--ink);font-weight:600}
+.mini{list-style:none;margin:4px 0 0;padding:0}
+.mini li{display:grid;grid-template-columns:22px 1fr auto;gap:6px;align-items:center;padding:5px 0;border-top:1px solid var(--line);font-size:13px}
+.mini li span:last-child{text-align:right;color:var(--muted)}
+.mini em{font-style:normal;color:var(--warn)}
+.mini .vdot{margin:0 0 0 4px}
+@media (max-width:760px){.explore.verif .panel{width:auto}.vstats{grid-template-columns:repeat(2,1fr)}}
+
+/* Espace client */
+.espbtn span{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.espbtn.on{background:var(--accent-soft)}
+.linkbtn{border:0;background:none;padding:0;color:var(--accent);font:inherit;cursor:pointer;text-decoration:underline}
+.etabs{display:flex;flex-wrap:wrap;width:100%;margin:6px 0 16px}
+.etabs button{flex:1;padding:7px 8px}
+.eform{display:grid;gap:12px}
+.ef{display:grid;gap:5px;font-size:13px;color:var(--muted);font-weight:600}
+.ef input,.ef textarea,.ef select{font:inherit;font-weight:400;color:var(--ink);font-size:15px;border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:10px 12px;width:100%}
+.ef textarea{resize:vertical}
+.egrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+.egrid .wide{grid-column:1/-1}
+.chk2{display:flex;gap:10px;align-items:flex-start;font-size:14px;color:var(--ink)}
+.chk2 input{width:18px;height:18px;margin-top:2px;accent-color:var(--accent);flex:none}
+.espmsg{font-size:14px;color:var(--warn);margin:4px 0 0}
+.espmsg.ok{color:#248a3d}
+.epriv{margin-top:18px;background:var(--surface);border-radius:14px;padding:12px 14px;box-shadow:0 0 0 1px var(--line);font-size:13px;color:var(--muted)}
+.epriv b{color:var(--ink)}.epriv p{margin:4px 0 0}
+.ehead{display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--surface);border-radius:14px;padding:12px 14px;box-shadow:0 0 0 1px var(--line)}
+.ehead small{display:block;color:#248a3d;font-size:12px}
+.ebody h4{margin:18px 0 10px;font-size:16px}
+.drop-zone.small{padding:18px 14px;font-size:14px}
+.dlist{list-style:none;margin:12px 0 0;padding:0}
+.dlist li{display:flex;gap:10px;align-items:center;padding:10px 0;border-top:1px solid var(--line)}
+.dlist .dname{flex:1;min-width:0}.dlist .dname b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px}
+.dlist .dname small{color:var(--muted);font-size:12px}
+.dlist select{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:5px 7px;font-size:13px}
+.dlist .empty{color:var(--muted);font-size:14px;justify-content:center}
+.kv{list-style:none;padding:0;margin:0 0 14px}.kv li{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid var(--line);font-size:14px}.kv span{color:var(--muted)}
+.row.wrap{flex-wrap:wrap}
+.btn.danger{background:#ff3b30}
+.recbox{text-align:left}.recbox h3{margin:0 0 8px}
+.recbox code{display:block;font:600 20px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.06em;background:var(--surface);border-radius:12px;padding:16px;margin:14px 0;text-align:center;box-shadow:0 0 0 1px var(--line);user-select:all}
+.recbox .row{margin-bottom:14px}
+/* Assistant IA */
+.sheet.ia{width:min(820px,100%);display:flex;flex-direction:column;max-height:90vh}
+.iamsgs{flex:1;overflow:auto;min-height:220px;padding:6px 2px}
+.iaq{margin:14px 0 6px auto;max-width:80%;background:var(--accent);color:#fff;border-radius:16px 16px 4px 16px;padding:10px 14px;font-size:15px;width:fit-content}
+.iaa{background:var(--surface);border-radius:16px 16px 16px 4px;padding:12px 16px;box-shadow:0 0 0 1px var(--line);font-size:15px;max-width:94%}
+.iaa.wait{color:var(--muted)}.iaa.err{color:var(--warn);margin-top:10px}
+.iaa h3,.iaa h4,.iaa h5{margin:12px 0 6px;font-size:16px}.iaa p{margin:6px 0}.iaa ul,.iaa ol{margin:6px 0;padding-left:22px}
+.iaa table,.repia table{border-collapse:collapse;font-size:13px;margin:8px 0}.iaa th,.iaa td,.repia th,.repia td{border:1px solid var(--line);padding:4px 8px;text-align:left}
+.iaempty{color:var(--muted);text-align:center;padding:30px 10px}
+.iaquick{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
+.iaquick .pill{font-size:13px;padding:7px 12px;text-align:left}
+.iacomp{display:flex;gap:10px;align-items:flex-end;margin-top:8px}
+.iacomp textarea{flex:1;font:inherit;font-size:15px;border:1px solid var(--line);background:var(--surface);border-radius:14px;padding:10px 12px;resize:vertical;color:var(--ink)}
+.repia{background:var(--surface);border-radius:12px;padding:12px 16px;box-shadow:0 0 0 1px var(--line);margin:0 0 12px;font-size:14px}
+.repia .q{font-weight:600;margin:0 0 6px}
+/* Scénarios */
+.sctab{width:100%;border-collapse:collapse;font-size:13px;margin:8px 0}
+.sctab th{text-align:left;color:var(--muted);font-weight:600;font-size:11px;padding:6px 5px;border-bottom:1px solid var(--line)}
+.sctab td{padding:7px 5px;border-top:1px solid var(--line);vertical-align:top;font-variant-numeric:tabular-nums}
+.sctab td small{display:block;color:var(--muted);font-size:11px}
+.sctab tr.base td{background:var(--surface2)}
+.sctab .gain{color:#248a3d;font-weight:600}.sctab .loss{color:var(--warn);font-weight:600}
+.scp summary{cursor:pointer;color:var(--accent);font-size:14px;list-style:none;margin-bottom:6px}
+.scp summary::-webkit-details-marker{display:none}
+.slide{display:grid;gap:6px;font-size:14px;margin:8px 0}
+.slide input{width:100%;accent-color:var(--accent)}
+.freed li{grid-template-columns:26px 1fr auto}
+.freed .rk{width:22px;height:22px;font-size:11px}
+@media (max-width:760px){.egrid{grid-template-columns:1fr}}
+
+/* Rapport */
+.sheet.report{width:min(1100px,100%);max-height:92vh}
+.sheet.report .top{position:sticky;top:-30px;background:var(--bg);padding:6px 0 12px;z-index:2}
+.rhead .kicker{margin:0;color:var(--accent);font-weight:600;font-size:14px}
+.rhead h2{font-size:clamp(24px,3vw,32px);margin:4px 0 6px;overflow-wrap:anywhere}
+.rhead .meta{color:var(--muted);font-size:14px;margin:0 0 18px}
+.rtiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:0 0 24px}
+.rtiles div{background:var(--surface);border-radius:14px;padding:12px 14px;box-shadow:0 0 0 1px var(--line)}
+.rtiles b{display:block;font-size:26px;font-weight:700;letter-spacing:-.02em;color:#248a3d}
+.rtiles .w b{color:var(--warn)}.rtiles .g b{color:var(--faint)}.rtiles .a b{color:var(--accent)}
+.rtiles span{font-size:12px;color:var(--muted)}
+.report{counter-reset:sec}
+.report h3.num::before{counter-increment:sec;content:counter(sec) ". "}
+.report section{margin:0 0 28px}
+.report h3{font-size:20px;letter-spacing:-.02em;margin:0 0 8px}
+.report .note{color:var(--muted);font-size:14px;margin:0 0 10px;max-width:80ch}
+.report .keys{margin:0;padding-left:20px;font-size:15px;line-height:1.55}
+.report .keys li{margin:4px 0}
+.report table{width:100%;border-collapse:collapse;font-size:13px;background:var(--surface);border-radius:12px;overflow:hidden;box-shadow:0 0 0 1px var(--line)}
+.report th{text-align:left;font-weight:600;color:var(--muted);font-size:12px;padding:8px 10px;border-bottom:1px solid var(--line);background:var(--surface2)}
+.report td{padding:7px 10px;border-top:1px solid var(--line);vertical-align:top}
+.report td small{display:block;color:var(--muted);font-size:11px}
+.report table.dense td{padding:4px 8px;font-size:12px}
+.report .gain{color:#248a3d}.report .loss{color:var(--warn)}.report .warn{color:var(--warn)}
+.report .res{font-weight:600}.report .res.ok{color:#248a3d}.report .res.bad{color:var(--warn)}.report .res.nv{color:var(--faint)}
+.report .empty{color:var(--muted)}
+.report .method p{font-size:13px;color:var(--muted);max-width:90ch}
+@media (max-width:760px){.report table{display:block;overflow-x:auto}}
+@media print{
+  body.printing>*:not(#reportSheet){display:none!important}
+  body.printing{background:#fff;color:#000;overflow:visible!important}
+  body.printing #reportSheet{position:static;display:block;background:none;padding:0;-webkit-backdrop-filter:none;backdrop-filter:none;animation:none}
+  body.printing .sheet.report{width:auto;max-height:none;overflow:visible;box-shadow:none;border-radius:0;padding:0;background:#fff;animation:none}
+  body.printing .noprint{display:none!important}
+  body.printing .report table{box-shadow:none;border:1px solid #ccc}
+  body.printing .report tr{page-break-inside:avoid}
+  body.printing .rtiles div{box-shadow:none;border:1px solid #ccc}
+  @page{margin:14mm}
+}
+
+/* Vue carte */
+.explore{position:fixed;inset:0;padding-top:52px}
+#map{position:absolute;inset:52px 0 0 0;background:#e8e8ed}
+@media (prefers-color-scheme:dark){#map{background:#1c1c1e}}
+.panel{position:absolute;z-index:800;top:68px;left:16px;bottom:16px;width:420px;display:flex;flex-direction:column;background:var(--glass);
+  -webkit-backdrop-filter:saturate(180%) blur(24px);backdrop-filter:saturate(180%) blur(24px);border:1px solid var(--line);border-radius:22px;box-shadow:var(--shadow-lg);overflow:hidden}
+.phead{padding:16px 16px 12px;border-bottom:1px solid var(--line)}
+.phead .search .field{height:46px;border-radius:23px;padding-left:16px;box-shadow:none;background:var(--surface)}
+.phead .search input{font-size:16px}
+.phead .search .go{display:none}
+.chips{display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap}
+.chip{border:0;border-radius:980px;padding:7px 12px 7px 8px;font-size:14px;font-weight:500;display:inline-flex;gap:7px;align-items:center;background:var(--surface);box-shadow:0 0 0 1px var(--line)}
+.chip .tile{width:22px;height:22px;border-radius:6px}
+.chip .tile svg{width:14px;height:14px}
+.chip .chev{width:14px;height:14px;color:var(--faint)}
+.seg{display:inline-grid;grid-auto-flow:column;grid-auto-columns:1fr;background:var(--surface2);border-radius:9px;padding:2px;font-size:13px}
+.seg button{border:0;background:transparent;border-radius:7px;padding:5px 11px;font-weight:500;color:var(--ink)}
+.seg button[aria-pressed=true]{background:var(--surface);box-shadow:0 1px 3px rgba(0,0,0,.12),0 0 0 .5px rgba(0,0,0,.04)}
+@media (prefers-color-scheme:dark){.seg button[aria-pressed=true]{background:#636366}}
+.tools{display:flex;gap:8px;align-items:center;justify-content:space-between;margin-top:12px;flex-wrap:wrap}
+.toggle{display:inline-flex;gap:8px;align-items:center;font-size:13px;color:var(--muted);cursor:pointer;user-select:none}
+.toggle input{appearance:none;width:36px;height:22px;border-radius:11px;background:var(--surface2);box-shadow:inset 0 0 0 1px var(--line);position:relative;margin:0;cursor:pointer;transition:background .2s}
+.toggle input::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform .2s}
+.toggle input:checked{background:#34c759;box-shadow:none}
+.toggle input:checked::after{transform:translateX(14px)}
+.pbody{flex:1;overflow:auto;padding:4px 8px 16px;overscroll-behavior:contain}
+.status{padding:14px 10px 6px;font-size:14px;color:var(--muted)}
+.status progress{display:block;width:100%;height:4px;margin-top:10px;accent-color:var(--accent);border-radius:2px}
+.status .warn{color:var(--warn)}
+.list{list-style:none;margin:0;padding:0}
+.item{border-radius:14px;margin:2px 0}
+.item>button{all:unset;box-sizing:border-box;cursor:pointer;display:grid;grid-template-columns:30px 1fr auto;gap:10px;align-items:center;width:100%;padding:11px 10px;border-radius:14px}
+.item>button:hover{background:rgba(127,127,127,.08)}
+.item>button:focus-visible{outline:3px solid var(--accent);outline-offset:-3px}
+.item.open{background:var(--surface);box-shadow:0 0 0 1px var(--line)}
+.rk{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-size:13px;font-weight:600;color:#fff;background:var(--accent);font-variant-numeric:tabular-nums}
+.who{min-width:0}
+.who b{display:block;font-weight:600;font-size:15px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.who small{display:block;color:var(--muted);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.badge{display:inline-block;font-size:11px;font-weight:600;padding:1px 6px;border-radius:5px;background:var(--surface2);color:var(--muted);margin-right:5px;vertical-align:1px;letter-spacing:0}
+.fig{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.fig .big{display:block;font-weight:600;font-size:17px;line-height:1.2}
+.fig .sm{display:block;color:var(--muted);font-size:13px}
+.det{padding:0 12px 14px 50px;font-size:14px}
+.det p{margin:0 0 8px;color:var(--muted)}
+.det .btns{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 4px}
+.btn{border:0;background:var(--accent);color:#fff;border-radius:980px;padding:8px 15px;font-size:14px;font-weight:500;display:inline-flex;align-items:center;gap:6px}
+.btn.sec{background:var(--surface2);color:var(--accent)}
+.btn:hover{text-decoration:none;filter:brightness(1.05)}
+.btn svg{width:16px;height:16px}
+.btn:disabled{opacity:.4;cursor:default}
+.det details summary{cursor:pointer;color:var(--accent);font-size:14px;margin-top:6px;list-style:none}
+.det details summary::-webkit-details-marker{display:none}
+.route-steps{list-style:none;margin:8px 0 0;padding:0;font-size:13px}
+.route-steps li{display:grid;grid-template-columns:1fr auto;gap:10px;padding:6px 0;border-top:1px solid var(--line)}
+.route-steps .d{color:var(--muted)}
+.group{margin:10px 2px 4px}
+.group h3{font-size:13px;font-weight:600;color:var(--muted);text-transform:none;margin:14px 10px 4px;display:flex;justify-content:space-between;gap:10px}
+.group h3 span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink);min-width:0}
+.group h3 small{display:block;font-weight:400;color:var(--muted);overflow:hidden;text-overflow:ellipsis}
+.empty{padding:26px 14px;text-align:center;color:var(--muted);font-size:15px}
+.pfoot{padding:10px 16px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:12px;color:var(--faint)}
+
+/* Feuille « Que cherchez-vous ? » */
+.backdrop{position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.28);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);display:grid;place-items:center;padding:20px;animation:fade .2s ease}
+.sheet{width:min(920px,100%);max-height:min(88vh,860px);overflow:auto;background:var(--bg);border-radius:28px;box-shadow:var(--shadow-lg);padding:30px clamp(18px,4vw,40px) 34px;animation:rise .28s cubic-bezier(.2,.9,.3,1.1)}
+.sheet.narrow{width:min(600px,100%)}
+.sheet .top{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:6px}
+.sheet h2{font-size:clamp(26px,3.4vw,34px);letter-spacing:-.035em;line-height:1.12;margin:0}
+.sheet .where{color:var(--muted);margin:6px 0 22px;font-size:16px;overflow-wrap:anywhere}
+.close{border:0;width:34px;height:34px;border-radius:50%;background:var(--surface2);display:grid;place-items:center;flex:none;color:var(--muted)}
+.close svg{width:16px;height:16px;stroke-width:2.4}
+.fam{margin:22px 0 0}
+.fam h3{font-size:20px;letter-spacing:-.02em;margin:0 0 12px;display:flex;align-items:baseline;gap:10px}
+.fam h3 small{font-size:14px;color:var(--muted);font-weight:400;letter-spacing:-.01em}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
+.card{all:unset;box-sizing:border-box;cursor:pointer;background:var(--surface);border-radius:var(--r);padding:16px 16px 15px;display:flex;flex-direction:column;gap:10px;min-height:138px;box-shadow:0 0 0 1px var(--line);transition:transform .18s ease,box-shadow .18s ease}
+.card:hover{transform:translateY(-2px) scale(1.01);box-shadow:var(--shadow)}
+.card:active{transform:scale(.98)}
+.card:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.tile{width:40px;height:40px;border-radius:11px;display:grid;place-items:center;color:#fff}
+.tile svg{width:23px;height:23px;stroke:#fff}
+.card b{font-size:16px;font-weight:600;line-height:1.25;letter-spacing:-.015em}
+.card small{font-size:13px;color:var(--muted);line-height:1.35;flex:1}
+.card .n{font-size:12px;color:var(--faint);font-variant-numeric:tabular-nums}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+@keyframes rise{from{opacity:0;transform:translateY(24px) scale(.98)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* Import de fichier */
+.drop-zone{display:block;border:2px dashed var(--line);border-radius:20px;padding:34px 20px;text-align:center;color:var(--muted);cursor:pointer;position:relative;background:var(--surface)}
+.drop-zone.over{border-color:var(--accent);background:var(--accent-soft)}
+.drop-zone input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.drop-zone b{display:block;color:var(--ink);font-size:17px;margin:8px 0 4px}
+.drop-zone svg{width:34px;height:34px;color:var(--accent)}
+.mapper{margin-top:18px;background:var(--surface);border-radius:20px;padding:18px 20px;box-shadow:0 0 0 1px var(--line)}
+.mapper h4{margin:0 0 14px;font-size:17px;overflow-wrap:anywhere}
+.mapper .f{margin-bottom:16px}
+.mapper .l{display:block;font-size:13px;font-weight:600;color:var(--muted);margin:0 0 6px}
+.mapper select{width:100%;border:1px solid var(--line);background:var(--surface2);border-radius:10px;padding:9px 12px;font-size:15px}
+.mapper .cols{display:grid;gap:6px}
+.mapper .cols label,.mapper label.chk{display:flex;gap:10px;align-items:center;font-size:15px;min-width:0;overflow-wrap:anywhere;cursor:pointer}
+.mapper input[type=checkbox]{width:18px;height:18px;accent-color:var(--accent);flex:none;margin:0}
+.mapper .prev{font-size:14px;margin:0 0 16px;padding-left:20px;color:var(--muted)}
+.mapper .prev li{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mapper .prev b{color:var(--ink);font-weight:500}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.hint{font-size:13px;color:var(--muted);margin:12px 0 0}
+.warnbox{margin-top:14px;font-size:14px;color:var(--warn)}
+
+/* Marqueurs */
+.pin-start{width:22px;height:22px;border-radius:50%;background:var(--accent);border:4px solid #fff;box-shadow:0 0 0 7px rgba(0,113,227,.2),0 2px 6px rgba(0,0,0,.3)}
+.pin-num{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;color:#fff;font:600 12px/1 var(--sans);border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.3);transition:transform .15s}
+.pin-num.sel{transform:scale(1.3)}
+.pin-dot{width:12px;height:12px;border-radius:50%;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35)}
+.leaflet-container{font-family:var(--sans)}
+.leaflet-tooltip{border-radius:10px;border:0;box-shadow:var(--shadow);padding:6px 10px;font-size:13px}
+.leaflet-bar{border:0!important;box-shadow:var(--shadow)!important;border-radius:12px!important;overflow:hidden}
+.leaflet-bar a{width:34px!important;height:34px!important;line-height:34px!important;border-color:var(--line)!important;background:var(--glass)!important;color:var(--ink)!important;-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px)}
+.leaflet-control-attribution{background:var(--glass)!important;color:var(--muted);border-radius:8px 0 0 0;font-size:11px}
+.leaflet-control-attribution a{color:var(--muted)}
+
+@media (max-width:760px){
+  body{font-size:16px}
+  .home{padding-top:96px}
+  .home .sub{margin-bottom:28px}
+  .search .field{height:56px}
+  .search input{font-size:17px}
+  .steps3{margin-top:44px;flex-direction:column;align-items:center;gap:10px}
+  #map{bottom:48vh}
+  .panel{top:auto;left:0;right:0;bottom:0;width:auto;height:52vh;border-radius:22px 22px 0 0;border-bottom:0}
+  .panel::before{content:"";display:block;width:38px;height:5px;border-radius:3px;background:var(--line);margin:8px auto 0}
+  .phead{padding-top:10px}
+  .backdrop{padding:0;place-items:end stretch}
+  .sheet{border-radius:24px 24px 0 0;max-height:92vh;padding:22px 16px 30px}
+  .cards{grid-template-columns:1fr 1fr;gap:10px}
+  .card{min-height:0;padding:14px}
+  .card small{display:none}
+  .leaflet-control-zoom{display:none}
+}
+</style>
+</head>
+<body>
+<header class="bar">
+  <button class="brand" id="brand" type="button" aria-label="Accueil"><span class="logo"><svg viewBox="0 0 24 24"><path d="M12 2.5c-4.1 0-7.5 3.2-7.5 7.2 0 5.3 7.5 11.8 7.5 11.8s7.5-6.5 7.5-11.8c0-4-3.4-7.2-7.5-7.2zm0 10a2.8 2.8 0 1 1 0-5.6 2.8 2.8 0 0 1 0 5.6z"/></svg></span>Kilomètres réels <span class="probadge">Pro</span></button>
+  <span class="row" style="gap:6px;flex-wrap:nowrap">
+  <button class="ghost espbtn" id="espaceBtn" type="button"></button>
+  <button class="ghost" id="openImport" type="button"><svg class="i" viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg><span>Importer un fichier</span></button>
+  </span>
+</header>
+
+<main id="home" class="home">
+  <h1>L'établissement le plus proche,<br> par la route.</h1>
+  <p class="sub">EHPAD, hôpitaux, cliniques, soins de ville, en France et près des frontières. Ou le trajet entre deux adresses.</p>
+  <div class="seg modes" id="modeSeg" role="group" aria-label="Que voulez-vous faire ?">
+    <button type="button" data-m="etab" aria-pressed="true">Établissements</button>
+    <button type="button" data-m="route" aria-pressed="false">Trajet A → B</button>
+    <button type="button" data-m="verif" aria-pressed="false">Vérification</button>
+  </div>
+  <button class="scope-btn scope" type="button" aria-label="Choisir les pays des adresses"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3z"/></svg><span><span class="scope-pre">Adresses en</span> <b class="scope-txt">France</b></span><svg class="i chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+  <div id="homeRoute" class="hidden">
+    <div class="rform">
+      <div class="rrow"><span class="dot a">A</span><div class="search" id="rHomeA"><div class="field"><input type="search" placeholder="Départ : adresse ou code postal" autocomplete="off" spellcheck="false" aria-label="Départ : adresse ou code postal" role="combobox" aria-expanded="false" aria-autocomplete="list"></div><ul class="sugg hidden" role="listbox"></ul></div></div>
+      <div class="rrow"><span class="dot b">B</span><div class="search" id="rHomeB"><div class="field"><input type="search" placeholder="Arrivée : adresse ou code postal" autocomplete="off" spellcheck="false" aria-label="Arrivée : adresse ou code postal" role="combobox" aria-expanded="false" aria-autocomplete="list"></div><ul class="sugg hidden" role="listbox"></ul></div></div>
+      <button class="swap" type="button" aria-label="Inverser départ et arrivée"><svg class="i" viewBox="0 0 24 24"><path d="M7 4v16M3 8l4-4 4 4M17 20V4M13 16l4 4 4-4"/></svg></button>
+    </div>
+    <button class="btn big rgo" type="button">Calculer le trajet</button>
+    <p class="msg hidden" id="routeMsgHome" role="alert"></p>
+  </div>
+  <div id="homeVerif" class="hidden">
+    <div class="vcard">
+      <h3>Vérifiez les affectations de vos médecins</h3>
+      <p>Déposez le fichier de vos affectations : une ligne par établissement, avec le code postal ou l'adresse de l'établissement et celui du médecin qui le suit. Le site :</p>
+      <ul>
+        <li>recalcule chaque trajet et signale ceux qui ne collent pas ;</li>
+        <li>trouve le médecin le plus proche de chaque établissement ;</li>
+        <li>propose une meilleure répartition, avec la carte et un rapport Excel.</li>
+      </ul>
+      <button class="btn big open-verif" type="button">Importer le fichier des affectations</button>
+      <p class="hint">Le fichier est lu dans votre navigateur et n'est envoyé nulle part. Seuls les codes postaux ou adresses servent aux calculs.</p>
+      <p class="hint">Avec un <button class="linkbtn" type="button" onclick="openEspace()">espace client</button> : vos paramètres de coûts, les documents de l'entreprise, l'assistant IA et vos analyses enregistrées, le tout chiffré.</p>
+    </div>
+  </div>
+  <div id="homeEtab">
+  <div class="search" id="searchHome">
+    <div class="field">
+      <svg class="i" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <input type="search" placeholder="Saisissez une adresse de départ" autocomplete="off" spellcheck="false" aria-label="Adresse de départ" role="combobox" aria-expanded="false" aria-autocomplete="list">
+      <button class="go" type="button" aria-label="Rechercher"><svg class="i" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+    </div>
+    <ul class="sugg hidden" role="listbox"></ul>
+  </div>
+  <div class="actions">
+    <button class="pill" id="locate" type="button"><svg class="i" viewBox="0 0 24 24"><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.5"/></svg>Ma position</button>
+    <button class="pill" id="openImport2" type="button"><svg class="i" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8l8 8M16 8l-8 8"/></svg>Plusieurs départs depuis Excel</button>
+  </div>
+  <p class="msg hidden" id="homeMsg" role="alert"></p>
+  </div>
+  <ol class="steps3">
+    <li><b>1</b>Une adresse</li>
+    <li><b>2</b>Un type d'établissement</li>
+    <li><b>3</b>Les plus proches, en km et en minutes</li>
+  </ol>
+  <footer class="foot">
+    <p id="dataInfo">Établissements : fichier FINESS du ministère de la Santé et OpenStreetMap pour les pays frontaliers.</p>
+    <p>Distances par la route calculées avec OSRM sur les données © contributeurs OpenStreetMap, sans trafic. Adresses localisées par la Géoplateforme IGN. Aucun compte, aucun cookie, aucune statistique de visite : vos adresses et vos fichiers ne sont jamais enregistrés.</p>
+  </footer>
+</main>
+
+<div id="explore" class="explore hidden">
+  <div id="map" role="region" aria-label="Carte"></div>
+  <aside class="panel" aria-label="Résultats">
+    <div class="phead">
+      <div class="search" id="searchPanel">
+        <div class="field">
+          <svg class="i" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+          <input type="search" placeholder="Adresse de départ" autocomplete="off" spellcheck="false" aria-label="Adresse de départ" role="combobox" aria-expanded="false" aria-autocomplete="list">
+          <button class="go" type="button" aria-label="Rechercher"></button>
+        </div>
+        <ul class="sugg hidden" role="listbox"></ul>
+      </div>
+      <div id="routePanel" class="hidden">
+        <div class="rform small">
+          <div class="rrow"><span class="dot a">A</span><div class="search" id="rPanA"><div class="field"><input type="search" placeholder="Départ" autocomplete="off" spellcheck="false" aria-label="Départ" role="combobox" aria-expanded="false" aria-autocomplete="list"></div><ul class="sugg hidden" role="listbox"></ul></div></div>
+          <div class="rrow"><span class="dot b">B</span><div class="search" id="rPanB"><div class="field"><input type="search" placeholder="Arrivée" autocomplete="off" spellcheck="false" aria-label="Arrivée" role="combobox" aria-expanded="false" aria-autocomplete="list"></div><ul class="sugg hidden" role="listbox"></ul></div></div>
+          <button class="swap" type="button" aria-label="Inverser départ et arrivée"><svg class="i" viewBox="0 0 24 24"><path d="M7 4v16M3 8l4-4 4 4M17 20V4M13 16l4 4 4-4"/></svg></button>
+        </div>
+        <button class="btn rgo" type="button" style="margin-top:10px;width:100%;justify-content:center">Calculer</button>
+        <p class="warnbox hidden" id="routeMsgPanel" role="alert" style="margin:10px 0 0"></p>
+        <div class="chips"><button class="chip scope-btn" type="button"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3z"/></svg><span class="scope-txt">France</span><svg class="i chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button></div>
+      </div>
+      <div id="verifHead" class="hidden">
+        <div class="vtop"><b id="vFile"></b><button class="ghost" id="vNew" type="button">Autre fichier</button></div>
+        <div class="row vacts"><button class="btn" id="vReport" type="button">Rapport détaillé</button><button class="btn sec open-ia" type="button">Assistant IA</button><button class="btn sec" id="vSave" type="button">Enregistrer</button></div>
+        <div class="vstats" id="vStats"></div>
+        <div class="seg vtabs" id="vTabs" role="group" aria-label="Affichage">
+          <button type="button" data-t="trajets" aria-pressed="true">Trajets</button>
+          <button type="button" data-t="medecins" aria-pressed="false">Médecins</button>
+          <button type="button" data-t="props" aria-pressed="false">Propositions</button>
+          <button type="button" data-t="scen" aria-pressed="false">Scénarios</button>
+        </div>
+        <details class="vset"><summary>Réglages</summary>
+          <div id="vSet" class="vgrid">
+            <label>Optimiser <select id="vMetric"><option value="time">le temps de trajet</option><option value="km">la distance</option></select></label>
+            <label>Charge par médecin <select id="vCap"><option value="same">même nombre qu'aujourd'hui</option><option value="max">au plus N établissements</option></select></label>
+            <label>N <input type="number" id="vCapN" min="1" max="50" value="2" disabled></label>
+            <label>Écart toléré, distance <span><input type="number" id="vTolPct" min="0" value="15"> % ou <input type="number" id="vTolKm" min="0" value="5"> km</span></label>
+            <label>Écart toléré, temps <span><input type="number" id="vTolPctMin" min="0" value="20"> % ou <input type="number" id="vTolMin" min="0" value="8"> min</span></label>
+            <p class="hint" style="margin:0">Une ligne est en écart quand la différence dépasse les deux seuils à la fois.</p>
+          </div>
+        </details>
+      </div>
+      <div class="chips" id="etabChips">
+        <button class="chip" id="catChip" type="button"></button>
+        <span id="multiChip" class="chip hidden"></span>
+        <button class="chip scope-btn" type="button" aria-label="Pays des adresses"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3z"/></svg><span class="scope-txt">France</span><svg class="i chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+      </div>
+      <div class="tools">
+        <div class="seg" id="sortSeg" role="group" aria-label="Classer par">
+          <button type="button" data-v="km" aria-pressed="true">Distance</button>
+          <button type="button" data-v="time" aria-pressed="false">Temps</button>
+        </div>
+        <div class="seg" id="nSeg" role="group" aria-label="Nombre de résultats"></div>
+        <label class="toggle" id="foreignToggle"><input type="checkbox" id="foreign" checked> Pays voisins</label>
+      </div>
+    </div>
+    <div class="pbody" id="pbody">
+      <div class="status hidden" id="status"><span id="statusText"></span><progress id="prog" max="1" value="0"></progress></div>
+      <ol class="list" id="list"></ol>
+    </div>
+    <div class="pfoot">
+      <span id="footInfo"></span>
+      <span class="row">
+        <button class="btn sec hidden" id="stop" type="button">Arrêter</button>
+        <button class="btn sec" id="export" type="button" disabled><svg class="i" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M4 19h16"/></svg>Excel</button>
+      </span>
+    </div>
+  </aside>
+</div>
+
+<div class="backdrop hidden" id="catSheet">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="catTitle">
+    <div class="top">
+      <h2 id="catTitle">Que cherchez-vous ?</h2>
+      <button class="close" type="button" data-close aria-label="Fermer"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <p class="where" id="catWhere"></p>
+    <div id="families"></div>
+  </div>
+</div>
+
+<div class="backdrop hidden" id="countrySheet">
+  <div class="sheet narrow" role="dialog" aria-modal="true" aria-labelledby="cTitle">
+    <div class="top">
+      <h2 id="cTitle">Pays des adresses</h2>
+      <button class="close" type="button" data-close aria-label="Fermer"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <p class="where">Où chercher vos adresses et codes postaux : un pays, plusieurs, ou le monde entier. Les itinéraires fonctionnent partout où la route existe.</p>
+    <label class="toggle bigt"><input type="checkbox" id="cWorld"> <span><b>Tous les pays</b> (international)</span></label>
+    <div class="cfilter"><svg class="i" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input type="search" id="cFilter" placeholder="Rechercher un pays" autocomplete="off" aria-label="Rechercher un pays"></div>
+    <div id="cList" class="clist"></div>
+    <div class="cfoot"><span id="cCount" class="hint" style="margin:0"></span><button class="btn" id="cOk" type="button">Valider</button></div>
+  </div>
+</div>
+
+<div class="backdrop hidden" id="espaceSheet">
+  <div class="sheet narrow esp" role="dialog" aria-modal="true" aria-labelledby="espTitle">
+    <div class="top">
+      <h2 id="espTitle">Espace client</h2>
+      <button class="close" type="button" data-close aria-label="Fermer"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <div id="espaceBody"></div>
+  </div>
+</div>
+
+<div class="backdrop hidden" id="iaSheet">
+  <div class="sheet ia" role="dialog" aria-modal="true" aria-labelledby="iaTitle">
+    <div class="top">
+      <div><h2 id="iaTitle">Assistant IA</h2><p class="where" id="iaWho" style="margin:4px 0 0"></p></div>
+      <span class="row" style="flex-wrap:nowrap"><button class="ghost" id="iaNew" type="button">Nouvelle conversation</button><button class="close" type="button" data-close aria-label="Fermer"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></span>
+    </div>
+    <div id="iaMsgs" class="iamsgs"></div>
+    <div id="iaQuick" class="iaquick"></div>
+    <div class="iacomp"><textarea id="iaQ" rows="2" placeholder="Posez votre question… (Entrée pour envoyer)"></textarea><button class="btn" id="iaSend" type="button">Envoyer</button></div>
+    <p class="hint" id="iaNote"></p>
+  </div>
+</div>
+
+<div class="backdrop hidden" id="reportSheet">
+  <div class="sheet report" role="dialog" aria-modal="true" aria-label="Rapport détaillé">
+    <div class="top noprint">
+      <span class="row"><button class="btn" id="rPrint" type="button">Imprimer ou enregistrer en PDF</button><button class="btn sec" id="rExcel" type="button">Rapport Excel</button></span>
+      <button class="close" type="button" data-close aria-label="Fermer"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <div id="reportBody"></div>
+  </div>
+</div>
+
+<div class="backdrop hidden" id="verifSheet">
+  <div class="sheet narrow" role="dialog" aria-modal="true" aria-labelledby="vTitle">
+    <div class="top">
+      <h2 id="vTitle">Vérifier des affectations</h2>
+      <button class="close" type="button" data-close aria-label="Fermer"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <p class="where">Une ligne par établissement, avec sa localisation et celle du médecin qui le suit. Les distances et temps déclarés sont facultatifs.</p>
+    <label class="drop-zone" id="vDropZone">
+      <svg class="i" viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>
+      <b>Choisir le fichier</b>ou le glisser ici · .xlsx, .csv
+      <input type="file" id="vFile2" accept=".xlsx,.xlsm,.csv,.txt,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,text/plain" aria-label="Choisir le fichier des affectations">
+    </label>
+    <div class="warnbox hidden" id="vImportMsg" role="alert"></div>
+    <div id="vMapper" class="mapper hidden">
+      <h4 id="vMapTitle"></h4>
+      <div class="f hidden" id="vSheetRow"><label class="l" for="vSheetSel">Feuille du classeur</label><select id="vSheetSel"></select></div>
+      <div id="vRoles"></div>
+      <span class="l">Aperçu</span>
+      <ol class="prev" id="vPrev"></ol>
+      <div class="row"><button type="button" class="btn" id="vGo">Vérifier</button></div>
+    </div>
+  </div>
+</div>
+
+<div class="backdrop hidden" id="importSheet">
+  <div class="sheet narrow" role="dialog" aria-modal="true" aria-labelledby="impTitle">
+    <div class="top">
+      <h2 id="impTitle">Plusieurs adresses de départ</h2>
+      <button class="close" type="button" data-close aria-label="Fermer"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <p class="where">Importez un fichier Excel ou CSV : pour chaque adresse, vous obtiendrez les établissements les plus proches, dans un fichier Excel.</p>
+    <label class="drop-zone" id="dropZone">
+      <svg class="i" viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>
+      <b>Choisir un fichier</b>ou le glisser ici · .xlsx, .csv
+      <input type="file" id="file" accept=".xlsx,.xlsm,.csv,.txt,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,text/plain" aria-label="Choisir un fichier Excel ou CSV">
+    </label>
+    <p class="hint">Vous pouvez aussi coller des cellules copiées depuis Excel dans la barre de recherche. Le fichier est lu dans votre navigateur et n'est envoyé nulle part.</p>
+    <div class="warnbox hidden" id="importMsg" role="alert"></div>
+    <div id="mapper" class="mapper hidden" role="group" aria-labelledby="mapTitle">
+      <h4 id="mapTitle"></h4>
+      <div class="f hidden" id="sheetRow"><label class="l" for="sheetSel">Feuille du classeur</label><select id="sheetSel"></select></div>
+      <div class="f"><label class="chk"><input type="checkbox" id="hasHeader"> La première ligne contient les titres</label></div>
+      <div class="f"><label class="l" for="nameCol">Colonne du nom</label><select id="nameCol"></select></div>
+      <div class="f"><span class="l" id="addrLab">Colonnes qui forment l'adresse</span><div class="cols" id="addrCols" role="group" aria-labelledby="addrLab"></div></div>
+      <div class="f hidden" id="mapPartRow"><label class="l" for="mapPart">Un calcul traite 500 adresses au maximum</label><select id="mapPart"></select></div>
+      <span class="l">Aperçu</span>
+      <ol class="prev" id="mapPrev"></ol>
+      <div class="row">
+        <button type="button" class="btn" id="mapOk">Continuer</button>
+        <button type="button" class="btn sec" id="mapCancel">Annuler</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+{{LEAFLET_JS}}
+</script>
+<script>
+{{APP_JS}}
+</script>
+</body>
+</html>
