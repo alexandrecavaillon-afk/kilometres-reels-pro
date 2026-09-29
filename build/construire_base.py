@@ -296,17 +296,24 @@ area["ISO3166-1"="{iso}"][admin_level=2]->.a;
  nwr(area.a)["healthcare"~"^(hospital|clinic|centre|laboratory|nursing_home)$"]({s},{o},{n},{e});
  nwr(area.a)["social_facility"~"^(nursing_home|assisted_living)$"]({s},{o},{n},{e}););
 out center tags;"""
-        brut = None
+        donnees = None
         for serveur in SERVEURS_OVERPASS * 2:
             try:
                 brut = telecharger(serveur, data=urllib.parse.urlencode({"data": q}).encode(), tentatives=1, timeout=400)
-                break
-            except RuntimeError:
+                d = json.loads(brut)
+            except (RuntimeError, ValueError):
                 continue
-        if brut is None:
+            remarque = str(d.get("remark", ""))
+            if re.search(r"error|timed out|timeout|out of memory", remarque, re.I):
+                # Réponse tronquée : Overpass renvoie ce qu'il a trouvé avant l'erreur. On essaie le serveur suivant.
+                print(f"  {nom_pays} : réponse incomplète de {serveur} ({remarque[:80]}), serveur suivant", file=sys.stderr)
+                continue
+            donnees = d
+            break
+        if donnees is None:
             raise RuntimeError("OpenStreetMap injoignable pour " + nom_pays)
         compte = 0
-        for el in json.loads(brut).get("elements", []):
+        for el in donnees.get("elements", []):
             t = el.get("tags", {})
             typ = type_osm(t)
             lat = el.get("lat") or el.get("center", {}).get("lat")
@@ -375,6 +382,20 @@ def main():
         except Exception as e:  # noqa: BLE001
             print("Pays frontaliers : échec (" + str(e) + "), reprise de la base précédente", file=sys.stderr)
             etranger = ancien_etranger()
+
+    # Garde-fou par pays : si un pays perd plus de 15 % de ses établissements d'un coup, c'est presque toujours
+    # une réponse OpenStreetMap incomplète. On garde alors les établissements de la base précédente pour ce pays.
+    if etranger:
+        ancien = ancien_etranger()
+        par_pays = lambda l: {iso: [(c, r) for c, rows in l.items() for r in rows if r[7] == iso] for iso in PAYS}
+        nouv, anc = par_pays(etranger), par_pays(ancien)
+        for iso, lignes_anc in anc.items():
+            if lignes_anc and len(nouv[iso]) < 0.85 * len(lignes_anc):
+                print(f"{PAYS[iso][0]} : {len(nouv[iso])} établissements contre {len(lignes_anc)} dans la base précédente, on garde la base précédente pour ce pays", file=sys.stderr)
+                for c in etranger:
+                    etranger[c] = [r for r in etranger[c] if r[7] != iso]
+                for c, r in lignes_anc:
+                    etranger.setdefault(c, []).append(r)
 
     total = sum(len(v) for v in france.values())
     if total < 20000:
