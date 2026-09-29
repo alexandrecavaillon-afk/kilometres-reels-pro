@@ -1,0 +1,161 @@
+{
+ "majFiness": "2026-05-12",
+ "genere": "2026-09-29",
+ "bandeKm": 60,
+ "pays": [
+  "Belgique",
+  "Luxembourg",
+  "Allemagne",
+  "Suisse",
+  "Italie",
+  "Monaco",
+  "Andorre",
+  "Espagne"
+ ],
+ "familles": [
+  {
+   "id": "pa",
+   "label": "Personnes âgées",
+   "cats": [
+    {
+     "id": "ehpad",
+     "label": "EHPAD",
+     "desc": "Hébergement médicalisé pour personnes âgées dépendantes",
+     "n": 7399,
+     "nEtranger": 1593
+    },
+    {
+     "id": "usld",
+     "label": "Soins de longue durée",
+     "desc": "Unités de soins de longue durée (USLD)",
+     "n": 577,
+     "nEtranger": 0
+    },
+    {
+     "id": "residence",
+     "label": "Résidences autonomie",
+     "desc": "Résidences autonomie et EHPA non médicalisés",
+     "n": 2495,
+     "nEtranger": 0
+    },
+    {
+     "id": "accueil_jour",
+     "label": "Accueil de jour",
+     "desc": "Centres de jour pour personnes âgées",
+     "n": 320,
+     "nEtranger": 0
+    },
+    {
+     "id": "ssiad",
+     "label": "Soins infirmiers à domicile",
+     "desc": "SSIAD et services autonomie aide et soins",
+     "n": 2172,
+     "nEtranger": 0
+    },
+    {
+     "id": "saad",
+     "label": "Aide à domicile",
+     "desc": "Services d'aide et d'accompagnement à domicile",
+     "n": 10813,
+     "nEtranger": 0
+    }
+   ]
+  },
+  {
+   "id": "hop",
+   "label": "Hôpitaux et cliniques",
+   "cats": [
+    {
+     "id": "chu",
+     "label": "CHU et CHR",
+     "desc": "Centres hospitaliers universitaires et régionaux",
+     "n": 388,
+     "nEtranger": 0
+    },
+    {
+     "id": "ch",
+     "label": "Centres hospitaliers",
+     "desc": "Hôpitaux publics, ex-hôpitaux locaux, hôpitaux des armées",
+     "n": 1576,
+     "nEtranger": 678
+    },
+    {
+     "id": "clinique",
+     "label": "Cliniques",
+     "desc": "Établissements de soins de courte durée, médecine et chirurgie",
+     "n": 631,
+     "nEtranger": 1070
+    },
+    {
+     "id": "smr",
+     "label": "Soins de suite et réadaptation",
+     "desc": "Établissements autorisés en SMR (ex-SSR)",
+     "n": 708,
+     "nEtranger": 0
+    },
+    {
+     "id": "psy",
+     "label": "Psychiatrie",
+     "desc": "Hôpitaux psychiatriques, CMP, CATTP, postcure",
+     "n": 4400,
+     "nEtranger": 0
+    },
+    {
+     "id": "had",
+     "label": "Hospitalisation à domicile",
+     "desc": "Structures d'HAD",
+     "n": 137,
+     "nEtranger": 0
+    },
+    {
+     "id": "dialyse",
+     "label": "Dialyse",
+     "desc": "Centres de dialyse et unités d'autodialyse",
+     "n": 674,
+     "nEtranger": 0
+    },
+    {
+     "id": "cancer",
+     "label": "Centres contre le cancer",
+     "desc": "Centres de lutte contre le cancer (CLCC)",
+     "n": 31,
+     "nEtranger": 0
+    }
+   ]
+  },
+  {
+   "id": "ville",
+   "label": "Soins de ville",
+   "cats": [
+    {
+     "id": "centre_sante",
+     "label": "Centres de santé",
+     "desc": "Centres de santé médicaux, dentaires, infirmiers",
+     "n": 3393,
+     "nEtranger": 176
+    },
+    {
+     "id": "msp",
+     "label": "Maisons de santé",
+     "desc": "Maisons de santé pluriprofessionnelles",
+     "n": 3107,
+     "nEtranger": 0
+    },
+    {
+     "id": "labo",
+     "label": "Laboratoires",
+     "desc": "Laboratoires de biologie médicale",
+     "n": 4562,
+     "nEtranger": 181
+    },
+    {
+     "id": "snp",
+     "label": "Soins non programmés",
+     "desc": "Lieux de soins sans rendez-vous",
+     "n": 340,
+     "nEtranger": 0
+    }
+   ]
+  }
+ ]
+}
