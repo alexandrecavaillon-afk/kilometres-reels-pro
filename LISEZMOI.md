@@ -20,9 +20,10 @@ Pour plusieurs adresses de départ : « Plusieurs départs depuis Excel », puis
 
 ## Vérification des affectations
 
-Onglet « Vérification » : importez un fichier avec une ligne par établissement, la localisation de l'établissement (code postal ou adresse) et celle du médecin qui le suit, et si vous les avez, la distance et le temps déclarés, le statut, les noms. Le site :
+Onglet « Vérification » : importez un fichier avec une ligne par établissement, la localisation de l'établissement (code postal ou adresse) et celle du médecin qui le suit, et si vous les avez, la distance et le temps déclarés, le statut, les noms. Le résultat s'affiche comme un tableur : une ligne par affectation, avec le numéro de ligne de votre fichier, la distance déclarée et la distance par la route, le temps déclaré et les trois temps réels (heures creuses, moyen, heure de pointe), l'écart et le résultat. On trie en cliquant sur un titre de colonne, on filtre (écarts, conformes, non vérifiables) et on recherche un code postal, une ville ou un médecin. La carte reste disponible avec le bouton « Voir la carte » : elle montre les points et, pour la ligne choisie, le vrai trajet par la route. Le site :
 
-- recalcule chaque trajet (itinéraire le plus rapide, sans trafic) et classe les lignes en conformes, en écart (au-delà de 15 % ou 5 km, et 20 % ou 8 min, réglables) ou non vérifiables (code postal introuvable, par exemple un CEDEX, ou deux codes de la même ville) ;
+- recalcule chaque trajet uniquement par la route, en voiture (jamais à vol d'oiseau) et classe les lignes en conformes, en écart ou non vérifiables (deux codes de la même ville, ou pas de route). Une distance est en écart au-delà de 15 % et 5 km ; un temps est en écart quand il sort de la plage heures creuses / heure de pointe de plus de 20 % et 8 min (réglable) ;
+- pour un code CEDEX (pas un code postal), essaie plusieurs communes et garde celle dont la distance par la route colle le mieux à la distance déclarée ;
 - trouve le médecin le plus proche de chaque établissement ;
 - propose une répartition qui réduit au minimum le temps (ou la distance) total, en gardant le même nombre d'établissements par médecin, ou au plus N ;
 - affiche la carte (médecins en bleu, établissements en rouge) et, pour chaque médecin, ses établissements et les plus proches de lui ;
@@ -120,8 +121,8 @@ Les fichiers Excel importés sont lus dans le navigateur et ne sont envoyés nul
 
 ## Limites
 
-- Les kilomètres sont ceux de l'itinéraire le plus rapide, sans trafic.
-- Le site présélectionne les 99 établissements les plus proches à vol d'oiseau, puis les classe par la route : un établissement plus lointain à vol d'oiseau mais plus rapide par la route peut, rarement, être manqué.
+- Les kilomètres sont ceux de l'itinéraire le plus rapide en voiture. Le calcul routier donne un temps sans trafic ; le site en déduit trois temps (heures creuses, moyen, heure de pointe) selon la vitesse moyenne du trajet, avec des coefficients recalés sur 325 trajets EHPAD ↔ médecin réels. Ce sont des estimations réalistes, pas le trafic du jour.
+- Pour « les plus proches », le site écarte d'abord les établissements manifestement trop loin, garde les 150 plus proches, puis les classe uniquement par la route : les distances et temps affichés sont toujours routiers.
 - Les serveurs d'itinéraires publics sont gratuits et partagés ; le site espace ses demandes d'une seconde. Un fichier de 200 départs prend environ 4 minutes.
 
 ## Organisation du dépôt
