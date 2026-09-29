@@ -414,6 +414,7 @@ svg.i{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stro
   .card small{display:none}
   .leaflet-control-zoom{display:none}
 }
+.vgo-row{position:sticky;bottom:0;padding:12px 0 4px;background:linear-gradient(transparent,var(--surface) 35%);z-index:2}
 </style>
 </head>
 <body>
@@ -605,7 +606,7 @@ svg.i{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 <div class="backdrop hidden" id="reportSheet">
   <div class="sheet report" role="dialog" aria-modal="true" aria-label="Rapport détaillé">
     <div class="top noprint">
-      <span class="row"><button class="btn" id="rPrint" type="button">Imprimer ou enregistrer en PDF</button><button class="btn sec" id="rExcel" type="button">Rapport Excel</button></span>
+      <span class="row"><button class="btn" id="rPrint" type="button">Imprimer ou enregistrer en PDF</button><button class="btn sec" id="rExcel" type="button">Google Sheets</button></span>
       <button class="close" type="button" data-close aria-label="Fermer"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     </div>
     <div id="reportBody"></div>
@@ -631,7 +632,7 @@ svg.i{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stro
       <div id="vRoles"></div>
       <span class="l">Aperçu</span>
       <ol class="prev" id="vPrev"></ol>
-      <div class="row"><button type="button" class="btn" id="vGo">Vérifier</button></div>
+      <div class="row vgo-row"><button type="button" class="btn" id="vGo">Vérifier</button></div>
     </div>
   </div>
 </div>

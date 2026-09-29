@@ -16,6 +16,7 @@ async function gsLoadConfig(){
   } catch (e){ /* pas de configuration : export Excel */ }
   const b = $("#export");
   if (GS.clientId && b && b.lastChild) b.lastChild.textContent = "Google Sheets";
+  const rx = $("#rExcel"); if (rx) rx.textContent = GS.clientId ? "Google Sheets" : "Rapport Excel";
 }
 function gsLib(){
   if (GS.lib) return GS.lib;

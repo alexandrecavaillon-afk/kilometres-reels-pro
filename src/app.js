@@ -336,7 +336,7 @@ function ensureMap(){
   if (map) { map.invalidateSize(); return; }
   map = L.map("map", {zoomControl:true, attributionControl:true}).setView([46.6, 2.4], 6);
   map.zoomControl.setPosition("topright");
-  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {maxZoom:19, attribution:"© contributeurs OpenStreetMap"}).addTo(map);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {maxZoom:19, attribution:"© contributeurs OpenStreetMap", referrerPolicy:"strict-origin-when-cross-origin"}).addTo(map);
   layerPts = L.layerGroup().addTo(map);
   layerRoute = L.layerGroup().addTo(map);
 }

@@ -230,6 +230,12 @@ function vCompute(){
   V.totCur = sum(r => r.prop ? r.curCost : NaN);
   V.totOpt = sum(r => r.prop ? r.propCost : NaN);
   V.changes = V.rows.filter(r => r.prop && r.prop.id !== r.dId).sort((x, y) => (y.curCost - y.propCost) - (x.curCost - x.propCost));
+  // Gain total négligeable (moins d'une minute ou d'un km) : on garde la répartition actuelle
+  if (V.changes.length && V.totCur - V.totOpt < (V.metric === "time" ? 60 : 1000)){
+    const byId = new Map(V.docs.map(d => [d.id, d]));
+    V.rows.forEach(r => { if (r.prop){ r.prop = byId.get(r.dId) || r.prop; r.propCost = r.curCost; } });
+    V.totOpt = V.totCur; V.changes = [];
+  }
   V.closer = V.rows.filter(r => r.best && r.best.id !== r.dId && r.best.pi !== r.di && r.curCost - r.bestCost > (V.metric === "time" ? 300 : 5000));
   V.docs.forEach(d => { d.tot = d.rows.reduce((s, r) => s + (isNaN(r.curCost) ? 0 : r.curCost), 0); d.max = Math.max(0, ...d.rows.map(r => isNaN(r.curCost) ? 0 : r.curCost)); });
 }
@@ -524,11 +530,11 @@ function renderReport(){
   const keys = [];
   keys.push(`<b>${st.c.ok} trajets sur ${st.n}</b> sont conformes aux valeurs déclarées, <b>${st.c.bad}</b> présentent un écart et <b>${st.c.nv}</b> ne peuvent pas être vérifiés.`);
   if (!isNaN(st.medKm)) keys.push(`En moyenne, les valeurs déclarées sont ${Math.abs(st.medKm - 1) < 0.05 && Math.abs(st.medMin - 1) < 0.05 ? "<b>fiables</b>" : "<b>à revoir</b>"} : écart médian ${pct(st.medKm)} sur les kilomètres et ${pct(st.medMin)} sur le temps.`);
-  if (st.prio.length) keys.push(`<b>${st.prio.length} trajets</b> ont un écart de plus de 20 km ou 20 minutes : ce sont les premiers à corriger.`);
+  if (st.prio.length) keys.push(`<b>${plural(st.prio.length, "trajet")}</b> ${st.prio.length > 1 ? "ont" : "a"} un écart de plus de 20 km ou 20 minutes : ${st.prio.length > 1 ? "ce sont les premiers" : "c'est le premier"} à corriger.`);
   keys.push(st.closer.length ? `<b>${st.closer.length} établissements</b> ont un médecin plus proche que le leur. En les lui confiant, on gagnerait <b>${unit(st.closerGain)}</b> ${H ? "de trajet" : ""} par tournée d'allers.` : "Chaque établissement est déjà suivi par le médecin le plus proche, ou presque.");
   keys.push(V.changes.length ? `En gardant ${V.capMode === "same" ? "le même nombre d'établissements par médecin" : `au plus ${V.capN} établissements par médecin`}, la meilleure répartition compte <b>${V.changes.length} réaffectations</b> et fait passer le total de ${unit(V.totCur)} à ${unit(V.totOpt)} (<b>−${unit(Math.max(0, gainOpt))}</b>).` : "Avec ce réglage de charge, la répartition actuelle est déjà la meilleure possible.");
   if (docsLong[0]) keys.push(`Trajets les plus longs : ${top(docsLong, 3).map(d => `${esc(d.label)} (${place(d.pt).replace(/^\S+ /, "")}, jusqu'à ${vFmt(d.max)})`).join(", ")}.`);
-  if (st.cedex) keys.push(`${st.cedex} lignes utilisent un code CEDEX, rattaché à la commune de son code de base : position approchée.`);
+  if (st.cedex) keys.push(`${plural(st.cedex, "ligne")} ${st.cedex > 1 ? "utilisent" : "utilise"} un code CEDEX (pas un code postal) : la commune retenue est indiquée dans le détail de chaque ligne, position approchée.`);
 
   const tr = cells => `<tr>${cells.map(c => `<td>${c}</td>`).join("")}</tr>`;
   const th = cells => `<thead><tr>${cells.map(c => `<th>${c}</th>`).join("")}</tr></thead>`;
@@ -595,7 +601,7 @@ function printReport(){
 }
 $("#vReport").addEventListener("click", openReport);
 $("#rPrint").addEventListener("click", printReport);
-$("#rExcel").addEventListener("click", exportVerif);
+$("#rExcel").addEventListener("click", () => { if (gsOn()) gsVerif(); else exportVerif(); });
 
 function vReportScenarios(){
   let res; try { res = V.SC || scCompute(); } catch (e){ return ""; }
