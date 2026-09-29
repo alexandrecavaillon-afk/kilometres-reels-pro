@@ -1,4 +1,5 @@
 {
   "supabaseUrl": "",
-  "supabaseAnonKey": ""
+  "supabaseAnonKey": "",
+  "googleClientId": "1022335021801-p197jmcv442lrebfttq85lmsaap5bfqm.apps.googleusercontent.com"
 }
