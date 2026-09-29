@@ -22,7 +22,7 @@
      "label": "EHPAD",
      "desc": "Hébergement médicalisé pour personnes âgées dépendantes",
      "n": 7399,
-     "nEtranger": 1183
+     "nEtranger": 1586
     },
     {
      "id": "usld",
@@ -77,14 +77,14 @@
      "label": "Centres hospitaliers",
      "desc": "Hôpitaux publics, ex-hôpitaux locaux, hôpitaux des armées",
      "n": 1576,
-     "nEtranger": 557
+     "nEtranger": 684
     },
     {
      "id": "clinique",
      "label": "Cliniques",
      "desc": "Établissements de soins de courte durée, médecine et chirurgie",
      "n": 631,
-     "nEtranger": 912
+     "nEtranger": 1061
     },
     {
      "id": "smr",
@@ -132,7 +132,7 @@
      "label": "Centres de santé",
      "desc": "Centres de santé médicaux, dentaires, infirmiers",
      "n": 3393,
-     "nEtranger": 141
+     "nEtranger": 177
     },
     {
      "id": "msp",
@@ -146,7 +146,7 @@
      "label": "Laboratoires",
      "desc": "Laboratoires de biologie médicale",
      "n": 4562,
-     "nEtranger": 138
+     "nEtranger": 181
     },
     {
      "id": "snp",
