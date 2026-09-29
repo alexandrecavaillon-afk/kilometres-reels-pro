@@ -145,13 +145,13 @@ function gsVerifTabs(){
     const eName = r.etabName || r.etabQ, dName = r.docName || r.docQ;
     if (r.res === "nv"){ nv.push([line, eName, dName, r.why.replace(/ · code CEDEX.*$/, "")]); continue; }
     if (r.newKm == null) continue;
-    const dk = r.km != null ? r.newKm - r.km : 0, dm = r.min != null ? r.newMin - r.min : 0;
+    const dk = r.dKm || 0, dm = r.dMin || 0;
     if (Math.abs(dk) > GS_BIG_KM || Math.abs(dm) > GS_BIG_MIN){
       const ck = colOf("km"), cm = colOf("min");
       if (ck >= 0 && r.km != null) corr[ri][ck] = {v:k1(r.newKm), bg:GS_GREEN, note:`Valeur d'origine : ${nf1.format(r.km)} km. Remplacée par la distance recalculée par la route.`};
-      if (cm >= 0 && r.min != null) corr[ri][cm] = {v:Math.round(r.newMin), bg:GS_GREEN, note:`Valeur d'origine : ${r.min} min. Remplacée par le temps recalculé par la route (sans trafic).`};
-      big.push([line, eName, dName, r.km ?? "", k1(r.newKm), r.min ?? "", Math.round(r.newMin)]);
-    } else if (r.res === "bad") small.push([line, eName, dName, r.km ?? "", k1(r.newKm), r.min ?? "", Math.round(r.newMin)]);
+      if (cm >= 0 && r.min != null) corr[ri][cm] = {v:Math.round(r.newMin), bg:GS_GREEN, note:`Valeur d'origine : ${r.min} min. Remplacée par le temps moyen par la route (heures creuses ${Math.round(r.tLow)} min, heure de pointe ${Math.round(r.tHigh)} min).`};
+      big.push([line, eName, dName, r.km ?? "", k1(r.newKm), r.min ?? "", Math.round(r.tLow), Math.round(r.newMin), Math.round(r.tHigh)]);
+    } else if (r.res === "bad") small.push([line, eName, dName, r.km ?? "", k1(r.newKm), r.min ?? "", Math.round(r.tLow), Math.round(r.newMin), Math.round(r.tHigh)]);
   }
   // Réflexion
   const R = [], T = t => R.push([{v:t, bold:true, size:14, fg:"#203A35"}]), S = t => R.push([{v:t, bold:true, fg:"#203A35"}]), P = t => R.push([t]), B = () => R.push([]);
@@ -161,9 +161,11 @@ function gsVerifTabs(){
   T("Vérification des kilomètres et des temps de trajet : démarche et corrections");
   P(`Fichier : ${V.file} · ${plural(V.rows.length, "affectation")} · vérifié le ${today} avec Kilomètres réels Pro`); B();
   S("1. Ce qui a été vérifié");
-  P("Chaque trajet a été recalculé par la route : itinéraire le plus rapide en voiture (données OpenStreetMap), sans trafic,");
+  P("Chaque trajet a été recalculé uniquement par la route, en voiture : itinéraire le plus rapide (données OpenStreetMap), jamais à vol d'oiseau,");
   P("du centre de la commune de l'établissement au centre de la commune du médecin (plus grande commune du code postal).");
-  P(`Une ligne est en écart quand la différence dépasse à la fois ${V.tolPct} % et ${V.tolKm} km, ou à la fois ${V.tolPctMin} % et ${V.tolMin} minutes.`); B();
+  P("Le temps sans trafic est converti en trois temps selon la vitesse moyenne du trajet : heures creuses, moyen, heure de pointe. Le temps déclaré est jugé par rapport à cette plage.");
+  P(`Une ligne est en écart quand la distance diffère de plus de ${V.tolPct} % et ${V.tolKm} km, ou quand le temps déclaré sort de la plage de plus de ${V.tolPctMin} % et ${V.tolMin} minutes.`);
+  P("Si le fichier contient une colonne à vol d'oiseau, elle est recopiée telle quelle dans les onglets du fichier mais n'est utilisée dans aucun calcul."); B();
   S("2. Résultat");
   H(["Résultat", "Lignes"]);
   [["Conformes", ok], [`Corrigées (plus de ${GS_BIG_KM} km ou ${GS_BIG_MIN} min d'écart)`, big.length], ["Petits écarts, non modifiés", small.length], ["Non vérifiables", nv.length], ["Codes CEDEX remplacés", cedex.length]].forEach(r => R.push(r)); B();
@@ -173,13 +175,14 @@ function gsVerifTabs(){
   B();
   S(`4. Trajets corrigés : plus de ${GS_BIG_KM} km ou ${GS_BIG_MIN} minutes d'écart`);
   P("Un tel écart ne s'explique pas par le calcul au centre de la commune : la valeur du fichier était fausse. Elle est remplacée par la valeur recalculée, en vert, avec l'ancienne valeur en note.");
-  const tab = rows => { H(["Ligne", "Établissement", "Médecin", "Km du fichier", "Km recalculés", "Écart km", "Min du fichier", "Min recalculées", "Écart min"]);
-    rows.forEach(x => { const n = R.length + 1; R.push([x[0], x[1], x[2], x[3], {v:x[4], fmt:"0.0"}, x[3] === "" ? null : {v:`=E${n}-D${n}`, fmt:"+0.0;-0.0;0"}, x[5], x[6], x[5] === "" ? null : {v:`=H${n}-G${n}`, fmt:"+0;-0;0"}]); }); };
+  const tab = rows => { H(["Ligne", "Établissement", "Médecin", "Km du fichier", "Km par la route", "Écart km", "Min du fichier", "Min heures creuses", "Min moyen", "Min heure de pointe", "Écart min (hors plage)"]);
+    rows.forEach(x => { const n = R.length + 1; R.push([x[0], x[1], x[2], x[3], {v:x[4], fmt:"0.0"}, x[3] === "" ? null : {v:`=E${n}-D${n}`, fmt:"+0.0;-0.0;0"}, x[5], x[6], x[7], x[8],
+      x[5] === "" ? null : {v:`=IF(G${n}<H${n},G${n}-H${n},IF(G${n}>J${n},G${n}-J${n},0))`, fmt:"+0;-0;0"}]); }); };
   if (big.length) tab(big); else P("Aucun.");
   B();
   S("5. Petits écarts, laissés tels quels");
   P("Ils viennent surtout du calcul de centre de commune à centre de commune. Les valeurs du fichier, faites avec les adresses exactes, sont sans doute plus justes.");
-  P("Les temps recalculés sont sans trafic : un temps du fichier un peu plus long n'est pas une erreur.");
+  P("Un temps déclaré situé entre les heures creuses et l'heure de pointe est considéré comme juste.");
   if (small.length) tab(small); else P("Aucun.");
   B();
   S("6. Lignes non vérifiables");
@@ -189,7 +192,7 @@ function gsVerifTabs(){
     S("7. Piste d'optimisation : un médecin plus proche existe");
     H(["Ligne", "Établissement", "Médecin actuel", "Temps actuel (min)", "Médecin le plus proche", "Son temps (min)", "Gain (min)"]);
     V.closer.slice().sort((a, b) => (b.curCost - b.bestCost) - (a.curCost - a.bestCost)).forEach(r => {
-      const n = R.length + 1, t = (di, ei) => Math.round(V.M.T[di][ei] / 60);
+      const n = R.length + 1, t = (di, ei) => Math.round(V.M.T[di][ei] / 60); // temps moyen
       R.push([rowOf(r) != null ? rowOf(r) + 1 : "", r.etabName || r.etabQ, r.dLabel, t(r.di, r.ei), r.best.label, t(r.best.pi, r.ei), {v:`=D${n}-F${n}`}]);
     });
   }
@@ -197,7 +200,7 @@ function gsVerifTabs(){
   return [
     {title:"Fichier d'origine", rows:orig, frozen:hr + 1, widths:wT},
     {title:"Fichier corrigé", rows:corr, frozen:hr + 1, widths:wT},
-    {title:"Réflexion", rows:R, widths:[60, 200, 160, 120, 150, 100, 100, 110, 90]}
+    {title:"Réflexion", rows:R, widths:[60, 200, 160, 110, 120, 90, 100, 110, 90, 120, 130]}
   ];
 }
 function gsVerif(){ gsRun(() => gsCreate(V.file.replace(/\.(xlsx|csv|txt)$/i, "") + " - vérification", gsVerifTabs())); }

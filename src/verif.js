@@ -4,7 +4,7 @@
    ===================================================================== */
 const VCOL = {ok:"#34c759", bad:"#ff9500", nv:"#8e8e93", doc:"#0071e3", etab:"#ff3b30", prop:"#34c759"};
 const V = {file:"", rows:[], docs:[], dPlaces:[], ePlaces:[], M:null, tab:"trajets", filter:"bad", selDoc:null, open:null,
-  metric:"time", capMode:"same", capN:2, tolPct:15, tolKm:5, tolPctMin:20, tolMin:8, ready:false, statusCol:false};
+  metric:"time", capMode:"same", capN:2, tolPct:15, tolKm:5, tolPctMin:20, tolMin:8, ready:false, statusCol:false, view:"table", q:"", sortK:"line", sortD:1};
 let IMPORT_TARGET = "multi";
 
 /* ---------- Import et choix des colonnes ---------- */
@@ -92,7 +92,7 @@ async function runVerif(rowsIn, saved){
   closeSheet("#verifSheet");
   if (S.busy){ S.abort = true; while (S.busy) await sleep(50); }
   S.abort = false; S.mode = "verif"; S.open = null;
-  V.file = saved ? saved.fichier : VM.title; V.ready = false; V.selDoc = null; V.open = null; V.tab = "trajets"; V.filter = "bad";
+  V.file = saved ? saved.fichier : VM.title; V.ready = false; V.selDoc = null; V.open = null; V.tab = "trajets"; V.filter = "bad"; V.view = "table"; V.q = ""; V.sortK = "line"; V.sortD = 1;
   V.statusCol = VM.map.status >= 0;
   { const sh = VM && VM.sheets[VM.si]; V.src = !Array.isArray(rowsIn) && sh && sh.raw ? {raw:sh.raw, rowNum:sh.rowNum, cols:sh.cols, hr:VM.hr, map:{...VM.map}, name:sh.name} : null; }
   V.rows = rows.map((r, i) => ({...r, i, eLabel:r.etabName || "Établissement " + r.etabQ, dId:(r.docName ? r.docName + "|" : "") + r.docQ, dLabel:r.docName || "Médecin " + r.docQ}));
@@ -121,17 +121,20 @@ async function runVerif(rowsIn, saved){
     }
     if (S.abort){ setStatus("Calcul arrêté."); return; }
     V.rows.forEach(r => { r.eKey = null; r.ePt = place.get(r.etabQ) || null; r.dPt = place.get(r.docQ) || null; });
-    // Codes CEDEX : parmi les communes possibles, on garde celle qui colle le mieux à la distance déclarée
-    V.rows.forEach(r => {
-      const p = r.ePt;
-      if (!p || !p.alts || p.alts.length < 2 || !r.dPt || r.km == null) return;
-      const fit = a => Math.abs(crow(a, r.dPt) / 1000 * 1.25 - r.km);
-      const b = p.alts.reduce((x, y) => fit(y) < fit(x) ? y : x);
-      if (b === p) return;
+    // Codes CEDEX : parmi les communes possibles, on garde celle dont la distance PAR LA ROUTE colle le mieux à la distance déclarée
+    const cdx = V.rows.filter(r => r.ePt && r.ePt.alts && r.ePt.alts.length > 1 && r.dPt && r.km != null);
+    for (let k = 0; k < cdx.length && !S.abort; k++){
+      const r = cdx[k], p = r.ePt;
+      setStatus(`Codes CEDEX : choix de la commune par la route, ${k + 1} sur ${cdx.length}`, k, cdx.length);
+      let dist = null;
+      try { dist = (await osrm(`/table/v1/driving/${[r.dPt, ...p.alts].map(cstr).join(";")}?sources=0&destinations=${p.alts.map((_, j) => j + 1).join(";")}&annotations=distance`)).distances[0]; } catch (e){ continue; }
+      let b = p, be = Infinity;
+      p.alts.forEach((a, j) => { const d = dist[j]; if (d == null) return; const e = Math.abs(d / 1000 - r.km); if (e < be){ be = e; b = a; } });
+      if (b === p) continue;
       const key = r.etabQ + " @" + b.city;
       if (!place.has(key)) place.set(key, {...b, label:b.label.replace(/\)$/, ", choisi d'après la distance déclarée)"), cedexChoix:true});
       r.eKey = key; r.ePt = place.get(key);
-    });
+    }
     // 2. Médecins
     const docs = new Map();
     V.rows.forEach(r => {
@@ -163,12 +166,16 @@ async function runVerif(rowsIn, saved){
         T[a0 + i][b0 + j] = t == null ? NaN : t; D[a0 + i][b0 + j] = d == null ? NaN : d;
       }
     }
-    // Trajets manifestement faux (route bien plus courte que la ligne droite) : ignorés
+    // Contrôle de cohérence : un itinéraire routier ne peut pas être nettement plus court que l'écart entre les deux points
+    // (cas d'une localisation erronée). La valeur de contrôle n'est jamais affichée ni utilisée dans les résultats.
     for (let i = 0; i < nD; i++) for (let j = 0; j < nE; j++){
       const c = crow(pt(V.dPlaces[i]), pt(V.ePlaces[j]));
       if (c > 2000 && D[i][j] < c * 0.6){ T[i][j] = NaN; D[i][j] = NaN; }
     }
-    V.M = {T, D};
+    // Temps sans trafic conservé (T0) ; les calculs utilisent le temps moyen
+    const T0 = T.map(row => Float64Array.from(row));
+    for (let i = 0; i < nD; i++) for (let j = 0; j < nE; j++){ const tr = trafic(T0[i][j], D[i][j]); if (tr) T[i][j] = tr.mid; }
+    V.M = {T, D, T0};
     setStatus("Analyse des affectations…");
     await sleep(30);
     vCompute();
@@ -186,14 +193,18 @@ function vCompute(){
   for (const r of V.rows){
     r.newKm = r.newMin = null; r.why = "";
     if (!r.ePt || !r.dPt){ r.res = "nv"; r.why = "Localisation introuvable : " + [!r.ePt && r.etabQ, !r.dPt && r.docQ].filter(Boolean).join(", ") + (/^\d{5}$/.test(!r.ePt ? r.etabQ : r.docQ) ? " (code CEDEX ?)" : ""); continue; }
-    const t = V.M.T[r.di][r.ei], d = V.M.D[r.di][r.ei];
-    if (isNaN(t)){ r.res = "nv"; r.why = "Aucun itinéraire par la route trouvé par le calcul"; continue; }
-    r.newKm = d / 1000; r.newMin = t / 60;
-    const cr = crow(r.ePt, r.dPt);
-    if (cr < 1000){ r.res = "nv"; r.why = "Même commune : non vérifiable avec le seul code postal"; continue; }
+    const t0 = V.M.T0[r.di][r.ei], d = V.M.D[r.di][r.ei];
+    r.tLow = r.tHigh = null; r.dKm = r.dMin = null;
+    if (isNaN(t0)){ r.res = "nv"; r.why = "Aucun itinéraire par la route trouvé par le calcul"; continue; }
+    const tr = trafic(t0, d);
+    r.newKm = d / 1000; r.newMin = tr.mid / 60; r.tLow = tr.low / 60; r.tHigh = tr.high / 60;
+    if (d < 1000){ r.res = "nv"; r.why = "Même commune : non vérifiable avec le seul code postal"; continue; }
     const issues = [];
-    if (r.km != null){ const dk = r.newKm - r.km; if (Math.abs(dk) > V.tolKm && Math.abs(dk) > r.km * V.tolPct / 100) issues.push(`distance ${dk > 0 ? "+" : "−"}${nf1.format(Math.abs(dk))} km`); }
-    if (r.min != null){ const dm = r.newMin - r.min; if (Math.abs(dm) > V.tolMin && Math.abs(dm) > r.min * V.tolPctMin / 100) issues.push(`temps ${dm > 0 ? "+" : "−"}${Math.round(Math.abs(dm))} min`); }
+    if (r.km != null){ const dk = r.newKm - r.km; r.dKm = dk; if (Math.abs(dk) > V.tolKm && Math.abs(dk) > r.km * V.tolPct / 100) issues.push(`distance ${dk > 0 ? "+" : "−"}${nf1.format(Math.abs(dk))} km`); }
+    if (r.min != null){
+      const dm = r.min < r.tLow ? r.min - r.tLow : r.min > r.tHigh ? r.min - r.tHigh : 0; r.dMin = dm;
+      if (Math.abs(dm) > V.tolMin && Math.abs(dm) > r.min * V.tolPctMin / 100) issues.push(`temps déclaré ${Math.round(r.min)} min, ${dm < 0 ? "plus court" : "plus long"} que la plage réelle ${Math.round(r.tLow)} à ${Math.round(r.tHigh)} min`);
+    }
     if (r.km == null && r.min == null){ r.res = "ok"; r.why = "Recalculé (pas de valeur déclarée)"; }
     else if (issues.length){ r.res = "bad"; r.why = "Écart : " + issues.join(", "); }
     else { r.res = "ok"; r.why = "Conforme"; }
@@ -273,10 +284,15 @@ function vRender(){
   $("#vFile").textContent = V.file;
   const gain = V.totCur - V.totOpt, unit = V.metric === "time" ? hours : m => nf0.format(Math.round(m / 1000)) + " km";
   $("#vStats").innerHTML = `<div class="vtile ok"><b>${c.ok}</b><span>trajets conformes</span></div><div class="vtile bad"><b>${c.bad}</b><span>écarts</span></div><div class="vtile nv"><b>${c.nv}</b><span>non vérifiables</span></div>`
-    + `<div class="vtile gain"><b>${gain > 0 ? "−" + unit(gain) : "0"}</b><span>${V.metric === "time" ? "de trajet" : "parcourus"} avec ${V.changes.length} réaffectations</span></div>`;
+    + (V.changes.length ? `<div class="vtile gain"><b>−${unit(gain)}</b><span>${V.metric === "time" ? "de trajet" : "parcourus"} avec ${plural(V.changes.length, "réaffectation")}</span></div>` : `<div class="vtile gain"><b>✓</b><span>répartition déjà optimale</span></div>`);
+  $("#explore").classList.toggle("vtable", V.view === "table");
+  $("#vView").textContent = V.view === "table" ? "Voir la carte" : "Voir le tableau";
   $$("#vTabs button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.t === V.tab)));
   const L0 = $("#list");
-  if (V.tab === "trajets"){
+  if (V.view === "table" && V.tab === "trajets"){ vRenderTable(c); }
+  else if (V.view === "table" && V.tab === "medecins"){ vRenderDocTable(); }
+  else if (V.view === "table" && V.tab === "props"){ vRenderPropTable(); }
+  else if (V.tab === "trajets"){
     const list = V.rows.filter(r => V.filter === "all" || r.res === V.filter);
     L0.innerHTML = `<li class="vfilter"><div class="seg" id="vFilter">${[["bad", "Écarts", c.bad], ["ok", "Conformes", c.ok], ["nv", "Non vérifiables", c.nv], ["all", "Tous", V.rows.length]].map(([k, l, n]) => `<button type="button" data-f="${k}" aria-pressed="${V.filter === k}">${l} ${n}</button>`).join("")}</div></li>`
       + list.map(vRowHTML).join("") + (list.length ? "" : `<li class="empty">Aucune ligne.</li>`);
@@ -297,6 +313,76 @@ function vRender(){
   if (V.open != null) vFillRow();
   if (V.selDoc) vFillDoc();
 }
+
+/* ---------- Vue tableau (par défaut) ---------- */
+const V_RES = {ok:"Conforme", bad:"Écart", nv:"Non vérifiable"};
+const vLine = r => r.src != null && V.src ? V.src.rowNum[r.src] + 1 : r.i + 1;
+const vPlace = p => p ? p.label.replace(/ \(CEDEX.*\)$/, "").replace(/ Arrondissement$/, "") : "introuvable";
+const vSign = (x, dec) => x == null || isNaN(x) ? "" : (x > 0 ? "+" : x < 0 ? "−" : "") + (dec ? nf1.format(Math.abs(x)) : Math.round(Math.abs(x)));
+const vCls = (x, lim) => x == null || isNaN(x) ? "" : Math.abs(x) <= lim ? "inr" : x > 0 ? "up" : "dn";
+const V_SORT = {line:r => vLine(r), status:r => r.status || "", etab:r => (r.etabName || r.etabQ).toLowerCase(), doc:r => (r.docName || r.docQ).toLowerCase(),
+  km:r => r.km ?? -1, newKm:r => r.newKm ?? -1, dKm:r => r.dKm == null ? -1 : Math.abs(r.dKm), min:r => r.min ?? -1, low:r => r.tLow ?? -1, mid:r => r.newMin ?? -1,
+  high:r => r.tHigh ?? -1, dMin:r => r.dMin == null ? -1 : Math.abs(r.dMin), res:r => ({bad:0, ok:1, nv:2})[r.res]};
+function vRowsShown(){
+  const q = V.q.trim().toLowerCase();
+  const rows = V.rows.filter(r => (V.filter === "all" || r.res === V.filter) && (!q || [r.etabQ, r.docQ, r.etabName, r.docName, r.status, vPlace(r.ePt), vPlace(r.dPt), String(vLine(r))].join(" ").toLowerCase().includes(q)));
+  const f = V_SORT[V.sortK] || V_SORT.line;
+  return rows.sort((a, b) => { const x = f(a), y = f(b); return (x < y ? -1 : x > y ? 1 : vLine(a) - vLine(b)) * V.sortD; });
+}
+function vTh(k, label, cls = "", title = ""){
+  const on = V.sortK === k;
+  return `<th class="${cls}" data-sort="${k}"${on ? ` aria-sort="${V.sortD > 0 ? "ascending" : "descending"}"` : ""}${title ? ` title="${esc(title)}"` : ""}>${label}${on ? (V.sortD > 0 ? " ↑" : " ↓") : ""}</th>`;
+}
+function vTr(r, ncol){
+  const sel = V.open === r.i;
+  return `<tr class="vr${sel ? " sel" : ""}" data-vi="${r.i}">
+    <td class="n num">${vLine(r)}</td>${V.statusCol ? `<td><small style="color:var(--ink)">${esc(r.status || "")}</small></td>` : ""}
+    <td><b>${esc(r.etabName || r.etabQ)}</b><small>${esc(vPlace(r.ePt))}${r.ePt && r.ePt.cedex ? " · code CEDEX" : ""}</small></td>
+    <td><b>${esc(r.docName || r.docQ)}</b><small>${esc(vPlace(r.dPt))}</small></td>
+    <td class="num sep">${r.km != null ? nf1.format(r.km) : "—"}</td>
+    <td class="num strong">${r.newKm != null ? nf1.format(r.newKm) : "—"}</td>
+    <td class="num ${vCls(r.dKm, V.tolKm)}">${vSign(r.dKm, 1)}</td>
+    <td class="num sep">${r.min != null ? Math.round(r.min) : "—"}</td>
+    <td class="num">${r.tLow != null ? Math.round(r.tLow) : "—"}</td>
+    <td class="num strong">${r.newMin != null ? Math.round(r.newMin) : "—"}</td>
+    <td class="num">${r.tHigh != null ? Math.round(r.tHigh) : "—"}</td>
+    <td class="num ${r.dMin === 0 ? "inr" : vCls(r.dMin, V.tolMin)}">${r.dMin == null ? "" : r.dMin === 0 ? "dans la plage" : vSign(r.dMin, 0)}</td>
+    <td class="sep"><span class="pill ${r.res}">${V_RES[r.res]}</span></td>
+    <td>${r.ePt && r.dPt ? `<button class="ghost vmap" type="button" data-map="${r.i}">Carte</button>` : ""}</td></tr>`
+    + (sel ? `<tr class="vdrow"><td colspan="${ncol}"><div class="det" id="vdet"></div></td></tr>` : "");
+}
+function vRenderTable(c){
+  const ncol = 13 + (V.statusCol ? 1 : 0);
+  $("#list").innerHTML = `<li class="vtools"><div class="seg" id="vFilter">${[["bad", "Écarts", c.bad], ["ok", "Conformes", c.ok], ["nv", "Non vérifiables", c.nv], ["all", "Tous", V.rows.length]].map(([k, l, n]) => `<button type="button" data-f="${k}" aria-pressed="${V.filter === k}">${l} ${n}</button>`).join("")}</div>
+      <input type="search" id="vQ" placeholder="Rechercher : code postal, ville, médecin, statut, n° de ligne" value="${esc(V.q)}" aria-label="Rechercher dans le tableau"></li>
+    <li class="vnote">Tout est calculé par la route, en voiture : kilomètres de l'itinéraire le plus rapide, et temps aux heures creuses, en moyenne et à l'heure de pointe. Jamais à vol d'oiseau. Cliquez sur un titre de colonne pour trier, sur une ligne pour le détail.</li>
+    <li class="vtw"><table class="vt"><thead>
+      <tr><th class="grp" colspan="${3 + (V.statusCol ? 1 : 0)}"></th><th class="grp sep" colspan="3">Distance (km)</th><th class="grp sep" colspan="5">Temps aller (min)</th><th class="grp sep" colspan="2"></th></tr>
+      <tr>${vTh("line", "Ligne", "num")}${V.statusCol ? vTh("status", "Statut") : ""}${vTh("etab", "Établissement")}${vTh("doc", "Médecin")}
+      ${vTh("km", "Déclarée", "num sep")}${vTh("newKm", "Par la route", "num")}${vTh("dKm", "Écart", "num")}
+      ${vTh("min", "Déclaré", "num sep")}${vTh("low", "Creuses", "num", "Heures creuses")}${vTh("mid", "Moyen", "num", "Temps moyen")}${vTh("high", "Pointe", "num", "Heure de pointe")}${vTh("dMin", "Écart", "num", "Écart entre le temps déclaré et la plage heures creuses / heure de pointe")}
+      ${vTh("res", "Résultat", "sep")}<th></th></tr></thead>
+      <tbody id="vtb">${vRowsShown().map(r => vTr(r, ncol)).join("") || `<tr><td colspan="${ncol}" class="hint">Aucune ligne.</td></tr>`}</tbody></table></li>`;
+}
+function vRenderDocTable(){
+  const docs = V.docs.slice().sort((a, b) => b.max - a.max);
+  $("#list").innerHTML = `<li class="vnote">Temps moyens par la route, aller. Cliquez sur un médecin pour voir ses établissements et ceux qui sont plus proches de lui.</li>
+    <li class="vtw"><table class="vt"><thead><tr><th>Médecin</th><th>Localisation</th><th class="num">Établissements</th><th class="num">Temps total aller</th><th class="num">Trajet le plus long</th><th>Remarque</th></tr></thead><tbody>
+    ${docs.map(d => { const sel = V.selDoc === d.id, closer = d.rows.filter(r => r.best && r.best.id !== d.id && r.best.pi !== d.pi && r.curCost - r.bestCost > 300).length;
+      return `<tr class="vr${sel ? " sel" : ""}" data-vd="${esc(d.id)}"><td><b>${esc(d.label)}</b></td><td>${esc(vPlace(d.pt))}</td><td class="num">${d.rows.length}</td><td class="num">${vFmt(d.tot)}</td><td class="num strong">${vFmt(d.max)}</td>
+        <td>${closer ? `<span class="pill bad">${plural(closer, "établissement")} avec un médecin plus proche</span>` : ""}</td></tr>` + (sel ? `<tr class="vdrow"><td colspan="6"><div class="det" id="vddet"></div></td></tr>` : ""); }).join("")}</tbody></table></li>`;
+}
+function vRenderPropTable(){
+  const L0 = $("#list");
+  const head = `<li class="vsum">${V.optMsg ? `<p class="warn">${esc(V.optMsg)}</p>` : ""}<p>${V.changes.length ? `<b>${plural(V.changes.length, "réaffectation")}</b> proposée${V.changes.length > 1 ? "s" : ""}, ${V.capMode === "same" ? "en gardant le même nombre d'établissements par médecin" : `avec au plus ${V.capN} établissements par médecin`}. Total aller : <b>${vFmt(V.totCur)}</b> aujourd'hui, <b>${vFmt(V.totOpt)}</b> après.` : "La répartition actuelle est déjà la meilleure possible avec ce réglage."}</p></li>`;
+  L0.innerHTML = head + (V.changes.length ? `<li class="vtw"><table class="vt"><thead><tr><th class="num">Ligne</th><th>Établissement</th><th>Médecin actuel</th><th class="num">Temps</th><th>Médecin proposé</th><th class="num">Temps</th><th class="num">Gain</th></tr></thead><tbody>
+    ${V.changes.map(r => `<tr class="vr${V.open === r.i ? " sel" : ""}" data-vi="${r.i}"><td class="n num">${vLine(r)}</td><td><b>${esc(r.etabName || r.etabQ)}</b><small>${esc(vPlace(r.ePt))}</small></td><td>${esc(r.dLabel)}</td><td class="num">${vFmt(r.curCost)}</td><td><b>${esc(r.prop.label)}</b></td><td class="num">${vFmt(r.propCost)}</td><td class="num dn">−${vFmt(Math.max(0, r.curCost - r.propCost))}</td></tr>` + (V.open === r.i ? `<tr class="vdrow"><td colspan="7"><div class="det" id="vdet"></div></td></tr>` : "")).join("")}</tbody></table></li>` : "");
+}
+function vSetView(v, keep){
+  V.view = v; $("#explore").classList.toggle("vtable", v === "table");
+  if (map) setTimeout(() => map.invalidateSize(), 60);
+  vRender(); drawMap(!keep);
+}
 function vBadge(res){ return `<span class="vdot" style="background:${VCOL[res]}"></span>`; }
 function vRowHTML(r){
   const open = V.open === r.i;
@@ -310,10 +396,10 @@ function vFillRow(){
   const bestTxt = r.best ? (r.best.id === r.dId || r.best.pi === r.di ? "C'est déjà le médecin le plus proche." : `Plus proche : <b>${esc(r.best.label)}</b>, ${vFmt(r.bestCost)} (au lieu de ${vFmt(r.curCost)}).`) : "";
   const propTxt = r.prop && r.prop.id !== r.dId ? `Réaffectation proposée : <b>${esc(r.prop.label)}</b>, ${vFmt(r.propCost)}.` : "";
   box.innerHTML = `<p style="color:${r.res === "bad" ? "var(--warn)" : "var(--muted)"}">${esc(r.why)}</p>
-    ${r.newKm != null ? `<p>Recalculé : ${vFmtBoth(r)} (itinéraire le plus rapide, sans trafic)</p>` : ""}
+    ${r.newKm != null ? `<p>Par la route, en voiture : <b>${km(r.newKm * 1000)}</b>. Temps aller : heures creuses <b>${dur(r.tLow * 60)}</b>, moyen <b>${dur(r.newMin * 60)}</b>, heure de pointe <b>${dur(r.tHigh * 60)}</b>.</p>` : ""}
     <p>${[r.ePt && esc(r.ePt.label), r.dPt && esc(r.dPt.label)].filter(Boolean).join(" ← ")}</p>
     ${bestTxt ? `<p>${bestTxt}</p>` : ""}${propTxt ? `<p>${propTxt}</p>` : ""}
-    ${r.ePt && r.dPt ? `<div class="btns"><button class="btn sec" type="button" data-route="${r.i}">Voir le trajet</button></div>` : ""}`;
+    ${r.ePt && r.dPt ? `<div class="btns"><button class="btn sec" type="button" data-map="${r.i}">Voir le trajet sur la carte</button></div>` : ""}`;
 }
 function vDocHTML(d){
   const sel = V.selDoc === d.id;
@@ -346,7 +432,7 @@ function vPropHTML(r){
 /* ---------- Carte ---------- */
 function drawVerifMap(fit = true){
   layerPts.clearLayers(); layerRoute.clearLayers();
-  if (!V.ready) return;
+  if (!V.ready || V.view === "table") return;
   if (V.tab === "scen" && V.SC && !V.selDoc && V.open == null){
     drawScenarioMap();
     if (fit){ const p = V.docs.filter(d => d.pt).map(d => [d.pt.lat, d.pt.lon]).concat(V.rows.filter(r => r.ePt).map(r => [r.ePt.lat, r.ePt.lon])); if (p.length > 1) map.fitBounds(p, {...panelPadding(), maxZoom:12}); }
@@ -354,21 +440,8 @@ function drawVerifMap(fit = true){
   }
   const pts = [], sel = V.selDoc, openRow = V.open != null ? V.rows[V.open] : null;
   const faded = !!sel || !!openRow;
-  const line = (a, b, o) => L.polyline([[a.lat, a.lon], [b.lat, b.lon]], {interactive:false, ...o}).addTo(layerPts);
-  // Traits des affectations
-  for (const r of V.rows){
-    if (!r.ePt || !r.dPt) continue;
-    const mine = sel ? r.dId === sel : openRow ? r === openRow : true;
-    if (V.tab === "props" && !sel && !openRow){
-      if (r.prop && r.prop.id !== r.dId){
-        line(r.dPt, r.ePt, {color:VCOL.bad, weight:1.5, opacity:.6, dashArray:"4 5"});
-        line(r.prop.pt, r.ePt, {color:VCOL.prop, weight:2.5, opacity:.9});
-      }
-      continue;
-    }
-    line(r.dPt, r.ePt, {color:r.res === "bad" ? VCOL.bad : "#8e8e93", weight:mine && faded ? 3 : 1.2, opacity:faded ? (mine ? .95 : .08) : .45});
-    if (openRow === r && r.prop && r.prop.id !== r.dId) line(r.prop.pt, r.ePt, {color:VCOL.prop, weight:3, opacity:.95, dashArray:"6 6"});
-  }
+  // Pas de trait droit entre les points : seul le trajet sélectionné est tracé, avec son itinéraire routier réel
+  if (openRow && openRow.ePt && openRow.dPt) vShowRoute(openRow.i);
   // Établissements (rouge)
   for (const r of V.rows){
     if (!r.ePt) continue;
@@ -397,20 +470,33 @@ function vOpenRow(i, fromMap){
   if (fromMap && V.tab === "trajets" && V.filter !== "all" && V.rows[i].res !== V.filter) V.filter = "all";
   V.open = V.open === i && !fromMap ? null : i; V.selDoc = null;
   vRender(); drawMap();
-  const li = $(`.item[data-vi="${i}"]`); if (li) li.scrollIntoView({block:"nearest", behavior:"smooth"});
+  const li = $(`.item[data-vi="${i}"], tr[data-vi="${i}"]`); if (li) li.scrollIntoView({block:"nearest", behavior:"smooth"});
 }
 function vSelDoc(id, fromMap){
   V.tab = "medecins"; V.open = null;
   V.selDoc = V.selDoc === id && !fromMap ? null : id;
   vRender(); drawMap();
-  const li = $(`.item[data-vd="${CSS.escape(id)}"]`); if (li) li.scrollIntoView({block:"nearest", behavior:"smooth"});
+  const li = $(`.item[data-vd="${CSS.escape(id)}"], tr[data-vd="${CSS.escape(id)}"]`); if (li) li.scrollIntoView({block:"nearest", behavior:"smooth"});
+}
+const V_ROUTES = new Map();
+async function vRoute(a, b){
+  const k = cstr(a) + ";" + cstr(b);
+  if (!V_ROUTES.has(k)) V_ROUTES.set(k, osrm(`/route/v1/driving/${k}?overview=full&geometries=geojson`).then(x => x.routes[0]).catch(e => { V_ROUTES.delete(k); throw e; }));
+  return V_ROUTES.get(k);
 }
 async function vShowRoute(i){
   const r = V.rows[i];
   try {
-    const res = (await osrm(`/route/v1/driving/${cstr(r.dPt)};${cstr(r.ePt)}?overview=full&geometries=geojson`)).routes[0];
+    const res = await vRoute(r.dPt, r.ePt);
+    if (V.open !== i) return;
     drawRoute(res.geometry);
-  } catch (e){ /* trajet indisponible */ }
+    if (r.prop && r.prop.id !== r.dId && r.prop.pt){
+      const alt = await vRoute(r.prop.pt, r.ePt);
+      if (V.open !== i) return;
+      L.polyline(alt.geometry.coordinates.map(c => [c[1], c[0]]), {color:VCOL.prop, weight:4.5, opacity:.9, dashArray:"8 7"})
+        .bindTooltip(`Proposé : ${esc(r.prop.label)}`).addTo(layerRoute);
+    }
+  } catch (e){ /* itinéraire indisponible pour le moment */ }
 }
 
 /* ---------- Export Excel (plusieurs onglets) ---------- */
@@ -440,9 +526,9 @@ function exportVerif(){
   const bestT = r => r.best ? V.M.T[r.best.pi][r.ei] : NaN, bestD = r => r.best ? V.M.D[r.best.pi][r.ei] : NaN;
   const propT = r => r.prop ? V.M.T[r.prop.pi][r.ei] : NaN, propD = r => r.prop ? V.M.D[r.prop.pi][r.ei] : NaN;
   const curT = r => r.ei >= 0 && r.di >= 0 ? V.M.T[r.di][r.ei] : NaN;
-  const s1 = [["N°", ...(V.statusCol ? ["Statut"] : []), "Établissement", "Localisation établissement", "Médecin", "Localisation médecin", "Km déclarés", "Min déclarées", "Km recalculés", "Min recalculées", "Écart km", "Écart min", "Résultat", "Détail", "Médecin le plus proche", "Son temps (min)", "Sa distance (km)", "Médecin proposé", "Temps proposé (min)", "Distance proposée (km)", "Gain (min)"]];
+  const s1 = [["N°", ...(V.statusCol ? ["Statut"] : []), "Établissement", "Localisation établissement", "Médecin", "Localisation médecin", "Km déclarés", "Min déclarées", "Km par la route", "Min moyen", "Min heures creuses", "Min heure de pointe", "Écart km", "Écart min (hors plage)", "Résultat", "Détail", "Médecin le plus proche", "Son temps (min)", "Sa distance (km)", "Médecin proposé", "Temps proposé (min)", "Distance proposée (km)", "Gain (min)"]];
   V.rows.forEach(r => s1.push([r.i + 1, ...(V.statusCol ? [r.status] : []), r.eLabel, r.ePt ? r.ePt.label : r.etabQ, r.dLabel, r.dPt ? r.dPt.label : r.docQ, r.km ?? "", r.min ?? "",
-    k1(r.newKm), m0(r.newMin), r.newKm != null && r.km != null ? k1(r.newKm - r.km) : "", r.newMin != null && r.min != null ? m0(r.newMin - r.min) : "", RES[r.res], r.why,
+    k1(r.newKm), m0(r.newMin), m0(r.tLow), m0(r.tHigh), r.dKm != null ? k1(r.dKm) : "", r.dMin != null ? m0(r.dMin) : "", RES[r.res], r.why,
     r.best ? r.best.label : "", cMin(bestT(r)), cKm(bestD(r)), r.prop ? r.prop.label : "", cMin(propT(r)), cKm(propD(r)), r.prop ? m0((curT(r) - propT(r)) / 60) : ""]));
   const s2 = [["Établissement", "Localisation", "Médecin actuel", "Temps actuel (min)", "Km actuels", "Médecin proposé", "Temps proposé (min)", "Km proposés", "Gain (min)"]];
   V.changes.forEach(r => s2.push([r.eLabel, r.ePt ? r.ePt.label : r.etabQ, r.dLabel, cMin(curT(r)), cKm(V.M.D[r.di][r.ei]), r.prop.label, cMin(propT(r)), cKm(propD(r)), m0((curT(r) - propT(r)) / 60)]));
@@ -493,11 +579,18 @@ $("#vNew").addEventListener("click", openVerif); // bouton « Autre fichier »
 $("#list").addEventListener("click", e => {
   if (S.mode !== "verif") return;
   const f = e.target.closest("#vFilter button"); if (f){ V.filter = f.dataset.f; V.open = null; vRender(); drawMap(false); return; }
-  const rt = e.target.closest("[data-route]"); if (rt){ vShowRoute(+rt.dataset.route); return; }
+  const mp = e.target.closest("[data-map]"); if (mp){ const i = +mp.dataset.map; V.open = i; V.selDoc = null; vSetView("map"); return; }
+  const th = e.target.closest("th[data-sort]"); if (th){ const k = th.dataset.sort; V.sortD = V.sortK === k ? -V.sortD : (k === "line" || k === "etab" || k === "doc" || k === "status" || k === "res" ? 1 : -1); V.sortK = k; vRender(); return; }
   if (e.target.closest(".det")) return;
-  const li = e.target.closest(".item[data-vi]"); if (li){ vOpenRow(+li.dataset.vi); return; }
-  const ld = e.target.closest(".item[data-vd]"); if (ld) vSelDoc(ld.dataset.vd);
+  const li = e.target.closest(".item[data-vi], tr[data-vi]"); if (li){ vOpenRow(+li.dataset.vi); return; }
+  const ld = e.target.closest(".item[data-vd], tr[data-vd]"); if (ld) vSelDoc(ld.dataset.vd);
 });
+$("#list").addEventListener("input", e => {
+  if (S.mode !== "verif" || e.target.id !== "vQ") return;
+  V.q = e.target.value; V.open = null;
+  const tb = $("#vtb"); if (tb) tb.innerHTML = vRowsShown().map(r => vTr(r, 13 + (V.statusCol ? 1 : 0))).join("") || `<tr><td colspan="14" class="hint">Aucune ligne.</td></tr>`;
+});
+$("#vView").addEventListener("click", () => vSetView(V.view === "table" ? "map" : "table"));
 $("#vSet").addEventListener("change", () => {
   V.metric = $("#vMetric").value; V.capMode = $("#vCap").value; V.capN = Math.max(1, parseInt($("#vCapN").value, 10) || 2);
   V.tolPct = +$("#vTolPct").value || 0; V.tolKm = +$("#vTolKm").value || 0; V.tolPctMin = +$("#vTolPctMin").value || 0; V.tolMin = +$("#vTolMin").value || 0;
@@ -556,7 +649,7 @@ function renderReport(){
   <section><h3>Points clés</h3><ul class="keys">${keys.map(k => `<li>${k}</li>`).join("")}</ul></section>
 
   <section><h3 class="num">Meilleurs parcours possibles</h3>
-    <p class="note">Établissements pour lesquels un autre médecin du fichier est plus proche (écart de plus de ${H ? "5 minutes" : "5 km"}), du plus gros gain au plus petit. Temps et distances aller, par l'itinéraire le plus rapide, sans trafic.</p>
+    <p class="note">Établissements pour lesquels un autre médecin du fichier est plus proche (écart de plus de ${H ? "5 minutes" : "5 km"}), du plus gros gain au plus petit. Distances par la route et temps moyens aller, en voiture.</p>
     ${st.closer.length ? `<table>${th(["Établissement", "Médecin actuel", "Trajet actuel", "Médecin plus proche", "Trajet", "Gain"])}<tbody>${st.closer.map(r => tr([`<b>${esc(r.eLabel)}</b><small>${esc(place(r.ePt))}</small>`, `${esc(r.dLabel)}<small>${esc(place(r.dPt))}</small>`, both(r.di, r.ei), `<b>${esc(r.best.label)}</b><small>${esc(place(r.best.pt))} · suit ${plural(r.best.rows.length, "établissement")}</small>`, both(r.best.pi, r.ei), `<b class="gain">−${vFmt(r.curCost - r.bestCost)}</b>`])).join("")}</tbody></table>` : `<p class="empty">Aucun.</p>`}
   </section>
 
@@ -586,7 +679,7 @@ function renderReport(){
   </section>
 
   <section class="method"><h3>Méthode et limites</h3>
-    <p>Chaque adresse ou code postal est localisé (Géoplateforme IGN pour la France, OpenStreetMap ailleurs). Pour un code postal seul, le point retenu est le centre de la plus grande commune de ce code ; un code CEDEX est rattaché à la commune de son code de base. Les trajets sont calculés par la route (itinéraire le plus rapide, sans trafic) avec OSRM sur les données OpenStreetMap, entre tous les médecins et tous les établissements du fichier. La répartition optimale est obtenue par la méthode hongroise, qui garantit le total le plus bas possible sous la contrainte de charge choisie. Sans nom de médecin dans le fichier, un code postal de médecin est compté comme un seul médecin.</p>
+    <p>Chaque adresse ou code postal est localisé (Géoplateforme IGN pour la France, OpenStreetMap ailleurs). Pour un code postal seul, le point retenu est le centre de la plus grande commune de ce code ; un code CEDEX est rattaché à la commune dont la distance par la route colle le mieux à la distance déclarée. Les trajets sont calculés uniquement par la route, en voiture (itinéraire le plus rapide, OSRM sur les données OpenStreetMap), jamais à vol d'oiseau ; le temps sans trafic est converti en trois temps (heures creuses, moyen, heure de pointe) selon la vitesse moyenne du trajet, et le temps déclaré est jugé par rapport à cette plage. Calculs faits entre tous les médecins et tous les établissements du fichier. La répartition optimale est obtenue par la méthode hongroise, qui garantit le total le plus bas possible sous la contrainte de charge choisie. Sans nom de médecin dans le fichier, un code postal de médecin est compté comme un seul médecin.</p>
     <p>Le fichier a été lu dans le navigateur : il n'a été ni envoyé ni enregistré par le site.</p>
   </section>`;
   $("#reportBody").innerHTML = html;

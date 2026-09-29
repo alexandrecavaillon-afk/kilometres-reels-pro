@@ -11,6 +11,26 @@ function dur(s){
   const h = Math.floor(m / 60); m = m % 60;
   return h + " h " + String(m).padStart(2, "0");
 }
+/* Temps de trajet réalistes. Le calcul routier (OSRM, itinéraire le plus rapide en voiture) donne un temps sans trafic.
+   On l'ajuste selon la vitesse moyenne du trajet : un trajet lent en ville est plus allongé qu'un trajet sur voie rapide.
+   Trois valeurs : heures creuses (basse), moyen, heure de pointe (haute). Aucune distance à vol d'oiseau. */
+const TRAFIC = [[20, 1.15, 1.45, 1.95], [35, 1.10, 1.35, 1.70], [60, 1.05, 1.20, 1.45], [90, 1.00, 1.12, 1.30]];
+function traficFacteurs(v){
+  if (!(v > 0)) return [1.05, 1.25, 1.55];
+  if (v <= TRAFIC[0][0]) return TRAFIC[0].slice(1);
+  for (let k = 1; k < TRAFIC.length; k++){
+    const a = TRAFIC[k - 1], b = TRAFIC[k];
+    if (v <= b[0]){ const t = (v - a[0]) / (b[0] - a[0]); return [1, 2, 3].map(j => a[j] + (b[j] - a[j]) * t); }
+  }
+  return TRAFIC[TRAFIC.length - 1].slice(1);
+}
+function trafic(sec, m){
+  if (sec == null || !isFinite(sec) || sec < 0) return null;
+  if (sec === 0) return {low:0, mid:0, high:0};
+  const f = traficFacteurs(m / sec * 3.6);
+  return {low:sec * f[0], mid:sec * f[1], high:sec * f[2]};
+}
+const durRange = t => t ? `${dur(t.low)} à ${dur(t.high)}` : "—";
 const plural = (n, w, ws) => nf0.format(n) + " " + (n > 1 ? (ws || w + "s") : w);
 const MAX_DEST = 500;
 const PAYS = {BE:"Belgique", LU:"Luxembourg", DE:"Allemagne", CH:"Suisse", IT:"Italie", MC:"Monaco", AD:"Andorre", ES:"Espagne"};
@@ -427,7 +447,7 @@ async function roadTo(p, cands){
   const coords = [p, ...cands].map(cstr).join(";");
   const dst = cands.map((_, k) => k + 1).join(";");
   const r = await osrm(`/table/v1/driving/${coords}?sources=0&destinations=${dst}&annotations=distance,duration`);
-  return cands.map((c, k) => ({...c, dist:r.distances[0][k], time:r.durations[0][k]}));
+  return cands.map((c, k) => { const t0 = r.durations[0][k], d = r.distances[0][k], tr = trafic(t0, d); return {...c, dist:d, time:tr ? tr.mid : t0, t0, tr}; });
 }
 const bySort = (a, b) => S.sort === "time" ? a.time - b.time || a.dist - b.dist : a.dist - b.dist || a.time - b.time;
 
@@ -514,7 +534,7 @@ async function runOne(){
   try {
     setStatus(`Recherche des ${c.label.toLowerCase()} les plus proches…`, 0, 2);
     const rows = await loadCat(S.cat);
-    const cands = nearest(S.start, rows, 99);
+    const cands = nearest(S.start, rows, 150);
     if (!cands.length){ setStatus("Aucun établissement de ce type."); return; }
     setStatus("Calcul des trajets par la route…", 1, 2);
     const res = await roadTo(S.start, cands);
@@ -617,7 +637,7 @@ async function fillDetail(){
   const from = d.from || S.start;
   const f = p => p.lat.toFixed(6) + "," + p.lon.toFixed(6);
   const tel = d.tel ? `<a class="btn sec" href="tel:${esc(d.tel.replace(/[^\d+]/g, ""))}"><svg class="i" viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></svg>${esc(d.tel)}</a>` : "";
-  box.innerHTML = `<p>${esc(d.type || CAT[S.cat].label)}${d.id && !d.id.startsWith("osm:") ? " · FINESS " + esc(d.id) : ""}${S.mode === "multi" ? "<br>Depuis " + esc(from.name) : ""}</p>
+  box.innerHTML = `${d.tr ? `<p class="trange"><span>Heures creuses <b>${dur(d.tr.low)}</b></span><span>Moyen <b>${dur(d.tr.mid)}</b></span><span>Heure de pointe <b>${dur(d.tr.high)}</b></span></p>` : ""}<p>${esc(d.type || CAT[S.cat].label)}${d.id && !d.id.startsWith("osm:") ? " · FINESS " + esc(d.id) : ""}${S.mode === "multi" ? "<br>Depuis " + esc(from.name) : ""}</p>
     <div class="btns">
       <a class="btn" href="https://maps.apple.com/?saddr=${f(from)}&daddr=${f(d)}&dirflg=d" target="_blank" rel="noopener noreferrer">Plans</a>
       <a class="btn sec" href="https://www.google.com/maps/dir/?api=1&travelmode=driving&origin=${f(from)}&destination=${f(d)}" target="_blank" rel="noopener noreferrer">Google Maps</a>${tel}
@@ -702,8 +722,9 @@ function exportXlsx(){
   if (S.mode === "verif"){ if (gsOn()) gsVerif(); else exportVerif(); return; }
   if (S.mode === "route"){
     const {a, b, r} = S.route;
-    const rows = [["Départ", "Arrivée", "Distance route (km)", "Durée (min)", "Durée", "Latitude départ", "Longitude départ", "Latitude arrivée", "Longitude arrivée"],
-      [a.label, b.label, Math.round(r.distance / 100) / 10, Math.round(r.duration / 60), dur(r.duration), a.lat, a.lon, b.lat, b.lon]];
+    const tr = trafic(r.duration, r.distance);
+    const rows = [["Départ", "Arrivée", "Distance route (km)", "Heures creuses (min)", "Temps moyen (min)", "Heure de pointe (min)", "Latitude départ", "Longitude départ", "Latitude arrivée", "Longitude arrivée"],
+      [a.label, b.label, Math.round(r.distance / 100) / 10, Math.round(tr.low / 60), Math.round(tr.mid / 60), Math.round(tr.high / 60), a.lat, a.lon, b.lat, b.lon]];
     if (gsOn()){ gsTable("Trajet", rows, [34, 34, 14, 12, 10, 12, 12, 12, 12], "trajet.xlsx"); return; }
     const url = URL.createObjectURL(xlsx("Trajet", rows, [34, 34, 14, 12, 10, 12, 12, 12, 12]));
     const el = document.createElement("a"); el.href = url; el.download = "trajet.xlsx"; document.body.appendChild(el); el.click(); el.remove();
@@ -712,9 +733,9 @@ function exportXlsx(){
   }
   const c = CAT[S.cat];
   const kmN = m => m == null ? "" : Math.round(m / 100) / 10, minN = s => s == null ? "" : Math.round(s / 60);
-  const row = (d, k) => [k + 1, d.name, d.type || c.label, d.addr, d.city, d.cc ? PAYS[d.cc] || d.cc : "France", d.tel, kmN(d.dist), minN(d.time), d.id && !d.id.startsWith("osm:") ? d.id : "", d.lat, d.lon];
-  const head = ["Rang", "Établissement", "Type", "Adresse", "Ville", "Pays", "Téléphone", "Distance route (km)", "Durée (min)", "N° FINESS", "Latitude", "Longitude"];
-  const wid = [7, 42, 30, 36, 28, 12, 16, 12, 11, 12, 11, 11];
+  const row = (d, k) => [k + 1, d.name, d.type || c.label, d.addr, d.city, d.cc ? PAYS[d.cc] || d.cc : "France", d.tel, kmN(d.dist), d.tr ? minN(d.tr.low) : "", minN(d.time), d.tr ? minN(d.tr.high) : "", d.id && !d.id.startsWith("osm:") ? d.id : "", d.lat, d.lon];
+  const head = ["Rang", "Établissement", "Type", "Adresse", "Ville", "Pays", "Téléphone", "Distance route (km)", "Heures creuses (min)", "Temps moyen (min)", "Heure de pointe (min)", "N° FINESS", "Latitude", "Longitude"];
+  const wid = [7, 42, 30, 36, 28, 12, 16, 12, 12, 12, 12, 12, 11, 11];
   let rows, name;
   if (S.mode === "one"){
     rows = [["Départ", ...head], ...shown().map((d, k) => [S.start.label, ...row(d, k)])];
@@ -813,7 +834,8 @@ function renderRoute(){
   const f = p => p.lat.toFixed(6) + "," + p.lon.toFixed(6);
   const note = [a, b].some(p => p.commune) ? "Pour un code postal, le trajet part du centre de la plus grande commune de ce code." : "";
   $("#list").innerHTML = `<li class="rcard">
-    <div class="rbig"><div><b>${km(r.distance)}</b><span>par la route</span></div><div><b>${dur(r.duration)}</b><span>de trajet, sans trafic</span></div></div>
+    <div class="rbig"><div><b>${km(r.distance)}</b><span>par la route, en voiture</span></div><div><b>${dur(trafic(r.duration, r.distance).mid)}</b><span>temps moyen</span></div></div>
+    <p class="trange"><span>Heures creuses <b>${dur(trafic(r.duration, r.distance).low)}</b></span><span>Moyen <b>${dur(trafic(r.duration, r.distance).mid)}</b></span><span>Heure de pointe <b>${dur(trafic(r.duration, r.distance).high)}</b></span></p>
     <ol class="ends">
       <li><span class="dot a">A</span><span>${altSelect("a", a) || esc(a.label)}</span></li>
       <li><span class="dot b">B</span><span>${altSelect("b", b) || esc(b.label)}</span></li>
@@ -860,7 +882,8 @@ $("#list").addEventListener("change", e => {
 $("#list").addEventListener("click", e => {
   if (e.target.id !== "copyRoute" || !S.route) return;
   const {a, b, r} = S.route;
-  const t = `${a.label} → ${b.label} : ${km(r.distance)}, ${dur(r.duration)} (itinéraire le plus rapide, sans trafic)`;
+  const tr = trafic(r.duration, r.distance);
+  const t = `${a.label} → ${b.label} : ${km(r.distance)} par la route, ${dur(tr.mid)} en moyenne (heures creuses ${dur(tr.low)}, heure de pointe ${dur(tr.high)})`;
   navigator.clipboard && navigator.clipboard.writeText(t).then(() => { e.target.textContent = "Copié"; setTimeout(() => { e.target.textContent = "Copier"; }, 1500); }, () => {});
 });
 $("#brand").addEventListener("click", goHome);
