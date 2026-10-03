@@ -1,6 +1,6 @@
 {
  "majFiness": "2026-05-12",
- "genere": "2026-09-29",
+ "genere": "2026-10-03",
  "bandeKm": 60,
  "pays": [
   "Belgique",
@@ -22,7 +22,7 @@
      "label": "EHPAD",
      "desc": "Hébergement médicalisé pour personnes âgées dépendantes",
      "n": 7399,
-     "nEtranger": 1586
+     "nEtranger": 1595
     },
     {
      "id": "usld",
@@ -77,14 +77,14 @@
      "label": "Centres hospitaliers",
      "desc": "Hôpitaux publics, ex-hôpitaux locaux, hôpitaux des armées",
      "n": 1576,
-     "nEtranger": 684
+     "nEtranger": 682
     },
     {
      "id": "clinique",
      "label": "Cliniques",
      "desc": "Établissements de soins de courte durée, médecine et chirurgie",
      "n": 631,
-     "nEtranger": 1061
+     "nEtranger": 1076
     },
     {
      "id": "smr",
